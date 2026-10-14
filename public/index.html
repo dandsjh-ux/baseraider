@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#38a8ff">
+  <title>Base Raider</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three-addons/" } }</script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ============ MAIN MENU ============ -->
+  <div id="menu" class="screen">
+    <div class="logo"><span class="l1">BASE</span><span class="l2">RAIDER</span></div>
+    <div class="tagline">Raid houses · Steal words · Defend your base!</div>
+    <div class="menu-grid">
+      <div class="panel char-panel">
+        <h2>Your Raider</h2>
+        <canvas id="preview"></canvas>
+        <div class="name-row">
+          <input id="nameInput" maxlength="14" placeholder="Your name" autocomplete="off" spellcheck="false">
+          <button id="randomBtn" class="btn small purple" title="Random">🎲</button>
+        </div>
+        <div class="label">Colour</div>
+        <div id="colorPicks" class="swatches"></div>
+        <div class="label">Hat</div>
+        <div id="hatPicks" class="hatpicks"></div>
+      </div>
+      <div class="panel rooms-panel">
+        <div class="rooms-head">
+          <h2>Open Rooms</h2>
+          <button id="createBtn" class="btn orange">＋ Create Room</button>
+        </div>
+        <div id="roomList"></div>
+        <div class="howto">
+          <h3>How to play</h3>
+          <ol>
+            <li><b>🛠️ Prep:</b> place your <b>20 blocks</b> &amp; buy traps to protect your house.</li>
+            <li><b>⚔️ Raid:</b> run into other houses, grab their <b>word cards</b> and carry them home.</li>
+            <li><b>🛡️ At home</b> you hold a stick — whack raiders! <b>🏃 Away</b> you're faster but unarmed.</li>
+            <li>Most points when time runs out wins! <b>10 pts</b> per word in your house, <b>2 pts</b> per knock-out.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ CREATE / EDIT ROOM ============ -->
+  <div id="createModal" class="modal hidden">
+    <div class="panel modal-box">
+      <h2 id="createTitle">Create a Room</h2>
+      <label class="field wide"><span>Room name</span><input id="roomName" maxlength="24" autocomplete="off"></label>
+      <div id="settingsFields" class="settings-grid"></div>
+      <div class="label">Word categories <button id="catAll" class="link" type="button">all</button> · <button id="catNone" class="link" type="button">none</button></div>
+      <div id="catPicks" class="cats"></div>
+      <div class="modal-actions">
+        <button id="createCancel" class="btn grey">Cancel</button>
+        <button id="createGo" class="btn green">Create Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ROOM LOBBY ============ -->
+  <div id="roomScreen" class="screen hidden">
+    <div class="panel room-panel">
+      <div class="room-top">
+        <h1 id="roomTitle">Room</h1>
+        <button id="leaveBtn" class="btn red small">Leave</button>
+      </div>
+      <div id="roomPlayers" class="pgrid"></div>
+      <div class="note" id="closedNote"></div>
+      <h3>Settings <button id="editSettings" class="btn small blue">✏️ Edit</button></h3>
+      <div id="roomSettings" class="room-settings"></div>
+      <div class="room-actions">
+        <button id="startBtn" class="btn green big">▶ Start Game!</button>
+        <div id="waitHost" class="waiting">Waiting for the host to start… <span class="dots"><i>.</i><i>.</i><i>.</i></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ END SCREEN ============ -->
+  <div id="endScreen" class="screen hidden">
+    <div class="panel end-panel">
+      <h1 id="winnerText">Game over</h1>
+      <div id="podium"></div>
+      <table id="results"></table>
+      <div class="room-actions">
+        <button id="backToMenu" class="btn grey">Main Menu</button>
+        <button id="backToRoom" class="btn green big">Back to Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ IN-GAME HUD ============ -->
+  <div id="hud" class="hidden">
+    <div id="phaseBar">
+      <div class="pb-row"><span id="phaseName">PREP</span><span id="phaseTimer">0:00</span><span id="roundInfo">Round 1/1</span></div>
+      <div id="phaseHint"></div>
+    </div>
+    <div id="toasts"></div>
+    <div id="alert" class="hidden">⚠️ RAIDER IN YOUR BASE! ⚠️</div>
+    <div id="banner"></div>
+    <div id="scoreboard"></div>
+    <div id="mapWrap">
+      <canvas id="minimap" width="170" height="170"></canvas>
+      <div class="map-btns">
+        <button id="helpBtn" class="btn small blue" title="Help (H)">?</button>
+        <button id="muteBtn" class="btn small blue" title="Sound (M)">🔊</button>
+      </div>
+    </div>
+    <div id="feed"></div>
+
+    <div id="statusPanel">
+      <div id="role" class="defend"></div>
+      <div class="hp-row"><div id="hpBar"><div id="hpFill" class="ok"></div></div><span id="hpText">100 HP</span></div>
+      <div class="stat-row"><span class="coin">🪙 <b id="coins">0</b></span><span id="myWords"></span></div>
+      <div id="carry"></div>
+      <div id="myCategory"></div>
+    </div>
+
+    <div id="buildHint" class="hidden"></div>
+    <div id="hotbar"></div>
+    <div id="actionBtns">
+      <button id="buildBtn" class="btn orange">🔨 Build (B)</button>
+      <button id="shopBtn" class="btn green">🛒 Shop (Q)</button>
+    </div>
+
+    <div id="clickToPlay" class="hidden"><div>🖱️ Click to play</div><small>WASD move · Mouse look · Space jump · H for help</small></div>
+    <div id="deathOverlay" class="hidden"><div class="d-title">💫 Knocked out!</div><div>Respawning at your house in <b id="deathCount">3</b>…</div></div>
+    <div id="frozenOverlay" class="hidden"></div>
+    <div id="hurtFlash"></div>
+
+    <div id="touch" class="hidden">
+      <div id="lookZone"></div>
+      <div id="joyZone"><div id="joyBase"><div id="joyKnob"></div></div></div>
+      <div id="touchBtns">
+        <button id="tRemove" class="tbtn">🗑️</button>
+        <button id="tShop" class="tbtn">🛒</button>
+        <button id="tBuild" class="tbtn">🔨</button>
+        <button id="tJump" class="tbtn big">⤒</button>
+        <button id="tAction" class="tbtn big red">✋</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="shopPanel" class="modal hidden">
+    <div class="panel modal-box shop-box">
+      <div class="shop-head"><h2>🛒 Defence Shop</h2><div class="coin big">🪙 <b id="shopCoins">0</b></div><button id="shopClose" class="btn small red">✕</button></div>
+      <div id="shopList"></div>
+      <div class="note">Buy here, then place items in <b>Build mode</b> (B or 1-7). Earn coins by stealing words (+10) and knocking out raiders (+5).</div>
+    </div>
+  </div>
+
+  <div id="helpPanel" class="modal hidden">
+    <div class="panel modal-box help-box">
+      <div class="shop-head"><h2>❓ How to Play</h2><button id="helpClose" class="btn small red">✕</button></div>
+      <div class="help-cols">
+        <div>
+          <h3>Goal</h3>
+          <p>Have the most <b>points</b> when the last raid ends. Every word card in your house = <b>10 pts</b>. Every raider you knock out = <b>2 pts</b>.</p>
+          <h3>Phases</h3>
+          <p><b>🛠️ Prep:</b> other bases are locked. Build walls with your blocks and buy defences.<br>
+          <b>⚔️ Raid:</b> sneak into other houses, touch word cards to grab them, and run home to bank them!</p>
+          <h3>Roles</h3>
+          <p><b>🛡️ Defending</b> (inside your compound): you hold a stick — click to whack raiders back.<br>
+          <b>🏃 Raiding</b> (anywhere else): no weapon, but you run much faster. Each word you carry slows you a little.</p>
+          <p>At 0 HP you're knocked out, drop any words you were carrying, and respawn at home.</p>
+        </div>
+        <div>
+          <h3>Controls</h3>
+          <table class="keys">
+            <tr><td>W A S D</td><td>Move</td></tr>
+            <tr><td>Mouse</td><td>Look (click to lock)</td></tr>
+            <tr><td>Space</td><td>Jump (jump over floor traps!)</td></tr>
+            <tr><td>Click</td><td>Whack / place item</td></tr>
+            <tr><td>B / 1-7</td><td>Build mode / pick item</td></tr>
+            <tr><td>R / Right-click</td><td>Remove your item</td></tr>
+            <tr><td>Q</td><td>Shop (at home)</td></tr>
+            <tr><td>Tab</td><td>Big scoreboard</td></tr>
+            <tr><td>Wheel</td><td>Zoom camera</td></tr>
+          </table>
+          <h3>Building</h3>
+          <p>Blocks &amp; towers go <b>outside</b> the house. Floor traps can go anywhere in your compound. You can never fully block the way in — the game checks for you!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="menuToast"></div>
+  <div id="conn" class="hidden">🔌 Connection lost — reconnecting…</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
