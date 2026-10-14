@@ -1,0 +1,19 @@
+{
+  "name": "baseraider",
+  "version": "1.0.0",
+  "description": "Base Raider - a cute third-person multiplayer word-raiding game (three.js + socket.io)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/rules.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "three": "0.160.0"
+  }
+}
