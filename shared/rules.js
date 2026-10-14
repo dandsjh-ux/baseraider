@@ -55,11 +55,11 @@ export const ITEMS = {
   },
   snow: {
     name: 'Snowball Tower', icon: '⛄', solid: true, turret: true, cost: 60,
-    desc: 'Lobs snowballs at raiders in your compound.', range: 14, cooldown: 1100, dmg: 12, speed: 24,
+    desc: 'Lobs snowballs at raiders in your compound.', range: 14, cooldown: 1400, dmg: 10, speed: 22,
   },
   frost: {
     name: 'Frost Cannon', icon: '🧊', solid: true, turret: true, cost: 90,
-    desc: 'Fires ice blasts that freeze raiders solid.', range: 13, cooldown: 2800, dmg: 5, freeze: 1600, speed: 18,
+    desc: 'Fires ice blasts that freeze raiders solid.', range: 13, cooldown: 3400, dmg: 5, freeze: 1200, speed: 18,
   },
   cactus: {
     name: 'Cactus Spikes', icon: '🌵', floor: true, cost: 30,

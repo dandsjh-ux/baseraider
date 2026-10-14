@@ -596,7 +596,7 @@ io.on('connection', (socket) => {
     const err = R.placementError(b.grid, i, j, type);
     if (err) return toast(p.id, err, 'bad');
     const [cx, cz] = R.cellCenter(i, j);
-    if (Math.hypot(cx - lx, cz - lz) > 14) return toast(p.id, 'Too far away.', 'bad');
+    if (Math.hypot(cx - lx, cz - lz) > 20) return toast(p.id, 'Too far away.', 'bad');
     if (def.solid) {
       const m = R.CELL / 2 + R.PLAYER_RADIUS;
       for (const q of c.r.players.values()) {

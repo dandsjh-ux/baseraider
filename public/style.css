@@ -288,6 +288,8 @@ body.touch #statusPanel { bottom: auto; top: 200px; width: 240px; }
 
 @media (max-width: 860px) {
   .menu-grid { grid-template-columns: 1fr; }
+  .rooms-panel { order: -1; }
+  #preview { height: 170px; }
   .pgrid { grid-template-columns: repeat(2, 1fr); }
   .settings-grid, .help-cols { grid-template-columns: 1fr; }
   .room-settings { grid-template-columns: 1fr 1fr; }
@@ -299,4 +301,31 @@ body.touch #statusPanel { bottom: auto; top: 200px; width: 240px; }
   .slot .ic { font-size: 22px; }
   #hotbar { bottom: auto; top: 110px; }
   #buildHint { bottom: auto; top: 170px; white-space: normal; width: 90vw; }
+}
+
+/* Short screens (phones in landscape): compact HUD, scoreboard on demand */
+#scoreBtn { display: none; }
+@media (max-height: 520px) {
+  #scoreBtn { display: inline-block; }
+  #scoreboard { display: none; }
+  #scoreboard.open, #scoreboard.big { display: block; top: 64px; left: 50%; transform: translateX(-50%); z-index: 5; }
+  #phaseBar { padding: 2px 12px 4px; top: 6px; }
+  #phaseName { font-size: 16px; }
+  #phaseTimer { font-size: 24px; }
+  #phaseHint, #feed, #actionBtns, #myCategory, #myWords { display: none; }
+  #minimap { width: 100px; height: 100px; }
+  #mapWrap { top: 6px; right: 6px; }
+  #statusPanel, body.touch #statusPanel { top: 6px; bottom: auto; left: 6px; width: 210px; padding: 6px 8px; gap: 3px; font-size: 11px; }
+  #role { font-size: 11px; padding: 3px 6px; }
+  #hpBar { height: 14px; }
+  #hotbar { top: 62px; bottom: auto; }
+  .slot { width: 42px; height: 42px; border-width: 3px; }
+  .slot .ic { font-size: 20px; }
+  #buildHint { top: 128px; bottom: auto; white-space: normal; max-width: 60vw; font-size: 12px; }
+  #toasts { top: 170px; }
+  #alert { top: auto; bottom: 12px; font-size: 16px; }
+  .tbtn { width: 48px; height: 48px; font-size: 20px; }
+  .tbtn.big { width: 66px; height: 66px; font-size: 28px; }
+  #joyBase { left: 24px; bottom: 24px; }
+  .d-title { font-size: 40px; }
 }

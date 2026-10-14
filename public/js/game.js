@@ -513,6 +513,7 @@ export class Game {
     on($('shopBtn'), 'click', () => this.toggleShop());
     on($('buildBtn'), 'click', () => this.toggleBuild());
     on($('helpBtn'), 'click', () => $('helpPanel').classList.toggle('hidden'));
+    on($('scoreBtn'), 'click', () => $('scoreboard').classList.toggle('open'));
     on($('muteBtn'), 'click', () => this.toggleMute());
     on($('shopClose'), 'click', () => this.toggleShop(false));
     on($('helpClose'), 'click', () => $('helpPanel').classList.add('hidden'));
