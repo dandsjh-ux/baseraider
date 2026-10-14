@@ -224,6 +224,20 @@ export class Stickman {
     this.ice.visible = false;
     this.group.add(this.ice);
 
+    // Dizzy stars shown while stunned by a trick word
+    this.stars = new THREE.Group();
+    const starMat = new THREE.MeshBasicMaterial({ color: '#ffe14d' });
+    const starGeo = new THREE.OctahedronGeometry(0.11, 0);
+    for (let n = 0; n < 4; n++) {
+      const st = new THREE.Mesh(starGeo, starMat);
+      const a = (n / 4) * Math.PI * 2;
+      st.position.set(Math.sin(a) * 0.5, 0, Math.cos(a) * 0.5);
+      this.stars.add(st);
+    }
+    this.stars.position.y = 2.35;
+    this.stars.visible = false;
+    this.group.add(this.stars);
+
     // Carried words float above the head
     this.carryGroup = new THREE.Group();
     this.carryGroup.position.y = 3.05;
@@ -272,7 +286,7 @@ export class Stickman {
     this.carryKey = key;
     this.carryGroup.clear();
     words.forEach((w, n) => {
-      const s = makeWordSprite(w.t, w.c, 0.55);
+      const s = makeWordSprite(w.t, w.c, 0.55, 'loot');
       s.position.y = n * 0.5;
       this.carryGroup.add(s);
     });
@@ -282,8 +296,13 @@ export class Stickman {
   flash() { this.hitFlash = 1; }
 
   // speed: horizontal speed (units/s); air: airborne; frozen; time: seconds
-  update(dt, { speed = 0, air = false, frozen = false, time = 0 } = {}) {
+  update(dt, { speed = 0, air = false, frozen = false, stunned = false, time = 0 } = {}) {
     this.ice.visible = frozen;
+    this.stars.visible = stunned;
+    if (stunned) {
+      this.stars.rotation.y += dt * 6;
+      this.head.rotation.z = Math.sin(time * 9) * 0.25;
+    } else this.head.rotation.z = 0;
     if (frozen) return;
     const moving = Math.min(1, speed / 7);
     this.walk += dt * (4 + speed * 1.25);

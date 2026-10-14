@@ -21,9 +21,11 @@ let g = empty();
 assert.equal(R.placementError(g, 0, 0, 'block'), null);
 assert.match(R.placementError(g, 9, 19, 'block'), /gates/);
 assert.match(R.placementError(g, 9, 0, 'block'), /gates/);
-assert.match(R.placementError(g, 9, 11, 'block'), /doors|gates/);
-assert.match(R.placementError(g, 10, 7, 'block'), /outside the house/);
-assert.equal(R.placementError(g, 10, 7, 'cactus'), null, 'floor traps may go in the house');
+const [di, dj] = R.cellAt(0.5, R.HOUSE.z1 + 1); // just outside the front door
+assert.match(R.placementError(g, di, dj, 'block'), /doors|gates/);
+const [hi, hj] = R.cellAt(0.5, (R.HOUSE.z0 + R.HOUSE.z1) / 2);
+assert.match(R.placementError(g, hi, hj, 'block'), /outside the house/);
+assert.equal(R.placementError(g, hi, hj, 'cactus'), null, 'floor traps may go in the house');
 assert.equal(R.placementError(g, 9, 19, 'slime'), null, 'floor traps may go in gates');
 
 // A full wall across the compound is refused at the last block
@@ -52,6 +54,21 @@ assert(placed >= 10);
 g = empty();
 for (let n = 0; n < R.MAX_TURRETS; n++) put(g, n * 2, 2, 'snow');
 assert.match(R.placementError(g, 0, 17, 'frost'), /Max/);
+
+// Word slots: main pedestals are well spaced, never overlap the loot shelf, and
+// the spawn point isn't on top of a card.
+const main = [...Array(R.MAIN_SLOTS).keys()].map(R.slotLocal);
+assert.equal(new Set(main.map((p) => p.join())).size, R.MAIN_SLOTS);
+for (const a of main) {
+  assert(R.inHouse(a[0], a[2]), 'slot inside the house');
+  for (const b of main) if (a !== b) assert(Math.hypot(a[0] - b[0], a[2] - b[2]) >= 3, 'cards spaced apart');
+  assert(Math.hypot(a[0] - R.SPAWN_LOCAL[0], a[2] - R.SPAWN_LOCAL[1]) > R.PICKUP_RANGE + 1, 'spawn clear of cards');
+}
+assert(R.MAIN_SLOTS >= R.SETTINGS.wordsPerBase.max + R.SETTINGS.decoysPerBase.max, 'room for all words + trick words');
+for (let n = R.MAIN_SLOTS; n < R.MAIN_SLOTS + 30; n++) {
+  const [x, , z] = R.slotLocal(n);
+  assert(R.isLootSlot(n) && R.inHouse(x, z));
+}
 
 // Settings sanitising
 const s = R.sanitizeSettings({ maxPlayers: 99, prepTime: 'x', categories: [3, 3, 99] }, CATEGORIES.length);

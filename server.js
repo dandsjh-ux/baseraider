@@ -51,6 +51,7 @@ function roomSummary(r) {
     id: r.id, name: r.name, host: r.players.get(r.hostId)?.name ?? '?',
     count: r.players.size, max: r.settings.maxPlayers, state: r.state,
     players: [...r.players.values()].map((p) => ({ name: p.name, look: p.look })),
+    members: [...r.players.keys()],
   };
 }
 function broadcastRooms() {
@@ -59,11 +60,12 @@ function broadcastRooms() {
 function roomInfo(r) {
   return {
     id: r.id, name: r.name, hostId: r.hostId, settings: r.settings, state: r.state,
-    players: [...r.players.values()].map((p) => ({ id: p.id, name: p.name, look: p.look })),
+    players: [...r.players.values()].map((p) => ({ id: p.id, name: p.name, look: p.look, online: p.online })),
   };
 }
 const sendRoom = (r) => io.to(r.id).emit('room', roomInfo(r));
-const toast = (id, msg, kind = 'info') => io.to(id).emit('toast', { msg, kind });
+const toPlayer = (pid) => io.to('p:' + pid);
+const toast = (id, msg, kind = 'info') => toPlayer(id).emit('toast', { msg, kind });
 const feed = (r, msg) => io.to(r.id).emit('feed', { msg });
 
 // ---------- game setup ----------
@@ -83,50 +85,77 @@ function startGame(r) {
     b.ownerName = p.name;
     b.closed = false;
     b.category = pool[n % pool.length];
-    const choices = shuffle(CATEGORIES[b.category].words.filter((w) => !used.has(b.category + ':' + w)));
-    choices.slice(0, s.wordsPerBase).forEach((text, slot) => {
-      used.add(b.category + ':' + text);
-      words.push({ id: nextWordId++, text, cat: b.category, base: k, slot, carrier: null, from: k });
-    });
-    const sp = R.spawnPoint(k, 3);
+    const choices = shuffle(CATEGORIES[b.category].words.filter((w) => !used.has(w)));
+    for (const text of choices.slice(0, s.wordsPerBase)) {
+      used.add(text);
+      words.push({ id: nextWordId++, text, cat: b.category, base: k, slot: -1, carrier: null, from: k, decoy: false });
+    }
+    const sp = R.spawnPoint(k, 1.5);
     Object.assign(p, {
       base: k, hp: R.MAX_HP, dead: false, respawnAt: 0,
       x: sp.x, y: 0, z: sp.z, ry: sp.ry, anim: 0, vx: 0, vz: 0, lastState: 0,
       carry: [], coins: s.startCoins, kos: 0, stolen: 0,
       inv: Object.fromEntries(R.ITEM_ORDER.map((t) => [t, t === 'block' ? R.START_BLOCKS : 0])),
-      frozenUntil: 0, slowUntil: 0, lastSwing: 0, lastHurt: 0, lastHurtBy: null, tpSeq: 1,
+      frozenUntil: 0, slowUntil: 0, stunUntil: 0, stunImmuneUntil: 0, lastSwing: 0, lastHurt: 0, lastHurtBy: null, tpSeq: 1,
     });
   });
+  // Trick words: words from other categories mixed in with each house's real words.
+  for (const b of bases) {
+    if (b.closed) continue;
+    const others = shuffle(CATEGORIES.flatMap((c, ci) => (ci === b.category ? [] : c.words.map((text) => ({ text, ci })))).filter((w) => !used.has(w.text)));
+    for (const { text, ci } of others.slice(0, s.decoysPerBase)) {
+      used.add(text);
+      words.push({ id: nextWordId++, text, cat: ci, base: b.index, slot: -1, carrier: null, from: b.index, decoy: true });
+    }
+    const mine = words.filter((w) => w.base === b.index);
+    shuffle([...Array(mine.length).keys()]).forEach((slot, n) => { mine[n].slot = slot; });
+  }
 
   const now = Date.now();
   r.state = 'game';
   r.game = { bases, words, shots: [], phase: 'prep', round: 1, phaseEnd: now + s.prepTime * 1000, lastTick: now };
 
-  io.to(r.id).emit('gameStart', {
-    settings: s,
-    phase: 'prep', round: 1, timeLeft: s.prepTime * 1000,
-    bases: bases.map(publicBase),
-    words: words.map(publicWord),
-    players: plist.map((p) => ({ id: p.id, name: p.name, look: p.look, base: p.base, x: p.x, z: p.z, ry: p.ry, seq: p.tpSeq })),
-  });
+  io.to(r.id).emit('gameStart', gamePayload(r));
   plist.forEach(sendInv);
   feed(r, '🛠️ Prep time! Build your defences.');
   broadcastRooms();
 }
 
-const publicBase = (b) => ({ index: b.index, owner: b.owner, ownerName: b.ownerName, category: b.category, closed: b.closed });
-const publicWord = (w) => ({ id: w.id, t: w.text, c: w.cat, b: w.base, s: w.slot, k: w.carrier });
-const sendWords = (r) => io.to(r.id).emit('words', r.game.words.map(publicWord));
-const sendInv = (p) => io.to(p.id).emit('inv', { coins: p.coins, inv: p.inv });
-function sendItems(r, b) {
-  const list = [];
-  b.grid.forEach((it, n) => it && list.push([n % R.GRID, Math.floor(n / R.GRID), it.type]));
-  io.to(r.id).emit('items', { b: b.index, list });
+function gamePayload(r) {
+  const g = r.game, now = Date.now();
+  return {
+    settings: r.settings,
+    phase: g.phase, round: g.round, timeLeft: g.phaseEnd - now,
+    bases: g.bases.map(publicBase),
+    words: g.words.map((w) => publicWord(w, g)),
+    items: g.bases.map(listItems),
+    players: [...r.players.values()].map((p) => ({ id: p.id, name: p.name, look: p.look, base: p.base, x: p.x, z: p.z, ry: p.ry, seq: p.tpSeq })),
+  };
 }
 
-function freeSlot(g, k) {
+const publicBase = (b) => ({ index: b.index, owner: b.owner, ownerName: b.ownerName, category: b.category, closed: b.closed });
+const publicWord = (w, g) => ({
+  id: w.id, t: w.text, b: w.base, s: w.slot, k: w.carrier,
+  c: w.base >= 0 && !R.isLootSlot(w.slot) ? g.bases[w.base].category : w.cat,
+});
+const sendWords = (r) => io.to(r.id).emit('words', r.game.words.map((w) => publicWord(w, r.game)));
+const wordCount = (g, k) => g.words.reduce((n, w) => n + (w.base === k && !w.decoy ? 1 : 0), 0);
+const sendInv = (p) => toPlayer(p.id).emit('inv', { coins: p.coins, inv: p.inv });
+function listItems(b) {
+  const list = [];
+  b.grid.forEach((it, n) => it && list.push([n % R.GRID, Math.floor(n / R.GRID), it.type]));
+  return list;
+}
+const sendItems = (r, b) => io.to(r.id).emit('items', { b: b.index, list: listItems(b) });
+
+// A house's own-category words go on the main pedestals; stolen words from
+// other categories go on the loot shelf by the door.
+function freeSlot(g, k, cat) {
   const taken = new Set(g.words.filter((w) => w.base === k).map((w) => w.slot));
-  let n = 0;
+  if (cat === g.bases[k].category) {
+    for (let n = 0; n < R.MAIN_SLOTS; n++) if (!taken.has(n)) return n;
+  }
+  let n = R.MAIN_SLOTS;
   while (taken.has(n)) n++;
   return n;
 }
@@ -134,7 +163,7 @@ function freeSlot(g, k) {
 function teleport(p, pos) {
   p.tpSeq++;
   p.x = pos.x; p.y = 0; p.z = pos.z; p.ry = pos.ry; p.vx = p.vz = 0;
-  io.to(p.id).emit('tp', { seq: p.tpSeq, p: [pos.x, 0, pos.z], ry: pos.ry });
+  toPlayer(p.id).emit('tp', { seq: p.tpSeq, p: [pos.x, 0, pos.z], ry: pos.ry });
 }
 
 // Carried words go back to the house they were taken from.
@@ -146,7 +175,7 @@ function dropCarry(r, p) {
     if (!w) continue;
     w.carrier = null;
     w.base = w.from;
-    w.slot = freeSlot(g, w.from);
+    w.slot = freeSlot(g, w.from, w.cat);
   }
   p.carry = [];
   sendWords(r);
@@ -161,7 +190,7 @@ function bankWords(r, p) {
     const fromOwner = g.bases[w.from].ownerName || 'someone';
     w.carrier = null;
     w.base = p.base;
-    w.slot = freeSlot(g, p.base);
+    w.slot = freeSlot(g, p.base, w.cat);
     w.from = p.base;
     names.push(`"${w.text}"`);
     p.stolen++;
@@ -171,7 +200,7 @@ function bankWords(r, p) {
   p.carry = [];
   sendWords(r);
   sendInv(p);
-  io.to(p.id).emit('banked', { count: names.length });
+  toPlayer(p.id).emit('banked', { count: names.length });
 }
 
 // ---------- combat ----------
@@ -218,12 +247,13 @@ function tickRoom(r, now) {
   if (r.state !== 'game') return;
 
   for (const p of r.players.values()) {
+    if (!p.online) continue;
     if (p.dead) {
       if (now >= p.respawnAt) {
         p.dead = false;
         p.hp = R.MAX_HP;
         p.frozenUntil = p.slowUntil = 0;
-        teleport(p, R.spawnPoint(p.base, 3));
+        teleport(p, R.spawnPoint(p.base, 1.5));
         io.to(r.id).emit('respawn', { id: p.id });
       }
       continue;
@@ -241,7 +271,8 @@ function tickRoom(r, now) {
       id: p.id, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), r: +p.ry.toFixed(2), a: p.anim,
       hp: Math.round(p.hp), d: p.dead ? 1 : 0,
       fz: Math.max(0, p.frozenUntil - now), sl: p.slowUntil > now ? 1 : 0,
-      c: p.coins, k: p.kos, st: p.stolen,
+      sn: Math.max(0, p.stunUntil - now), off: p.online ? 0 : 1,
+      c: p.coins, k: p.kos, st: p.stolen, w: wordCount(g, p.base),
     })),
   });
 }
@@ -266,8 +297,8 @@ function advancePhase(r, now) {
       p.coins += R.COINS_PER_ROUND;
       p.dead = false;
       p.hp = R.MAX_HP;
-      p.frozenUntil = p.slowUntil = 0;
-      teleport(p, R.spawnPoint(p.base, 3));
+      p.frozenUntil = p.slowUntil = p.stunUntil = 0;
+      teleport(p, R.spawnPoint(p.base, 1.5));
       sendInv(p);
     }
     io.to(r.id).emit('phase', { phase: 'prep', round: g.round, timeLeft: s.prepTime * 1000 });
@@ -280,7 +311,7 @@ function advancePhase(r, now) {
 function endGame(r) {
   const g = r.game;
   const ranking = [...r.players.values()].map((p) => {
-    const words = g.words.filter((w) => w.base === p.base).length;
+    const words = wordCount(g, p.base);
     return { id: p.id, name: p.name, look: p.look, words, kos: p.kos, stolen: p.stolen, points: R.points(words, p.kos) };
   }).sort((a, b) => b.points - a.points || b.words - a.words || b.stolen - a.stolen);
   io.to(r.id).emit('gameOver', { ranking });
@@ -337,7 +368,7 @@ function fireTurrets(r, now) {
       const [wx, wz] = R.toWorld(B, cx, cz);
       let best = null, bestD = def.range;
       for (const p of r.players.values()) {
-        if (p.dead || p.base === b.index) continue;
+        if (p.dead || !p.online || p.base === b.index) continue;
         const [lx, lz] = R.toLocal(B, p.x, p.z);
         if (!R.inCompound(lx, lz, 1)) continue;
         const d = Math.hypot(p.x - wx, p.z - wz);
@@ -369,7 +400,7 @@ function moveShots(r, dt) {
     s.life -= dt;
     // Hit a player?
     for (const p of r.players.values()) {
-      if (p.dead || p.base === s.base) continue;
+      if (p.dead || !p.online || p.base === s.base) continue;
       if (segPointDist(ox, oy, oz, s.x, s.y, s.z, p.x, p.y + 1, p.z) < 0.8) {
         const def = R.ITEMS[s.type];
         const sp = Math.hypot(s.vx, s.vz) || 1;
@@ -411,49 +442,144 @@ setInterval(() => {
   }
 }, TICK_MS);
 
-// ---------- rooms ----------
-function leaveRoom(socket) {
-  const r = rooms.get(socket.data.roomId);
-  socket.data.roomId = null;
-  socket.join('lobby');
-  if (!r) return;
-  socket.leave(r.id);
-  const p = r.players.get(socket.id);
-  if (p && r.game) {
+// ---------- players, sessions & rooms ----------
+// Each browser keeps a secret token (localStorage), so refreshing, closing the
+// tab or a Wi-Fi blip puts you straight back into your room / game.
+const sessions = new Map(); // token -> { pid, socketId, roomId, lastSeen }
+let nextPid = 1;
+const LOBBY_GRACE_MS = 45_000;       // offline players are dropped from a lobby after this
+const EMPTY_GAME_ROOM_MS = 5 * 60_000; // a game nobody is connected to is closed after this
+
+function removePlayer(r, pid) {
+  const p = r.players.get(pid);
+  if (!p) return;
+  if (r.game) {
     dropCarry(r, p);
     feed(r, `👋 ${p.name} left the game. Their house is still open for raiding!`);
   }
-  r.players.delete(socket.id);
+  r.players.delete(pid);
+  for (const s of sessions.values()) if (s.pid === pid && s.roomId === r.id) s.roomId = null;
   if (r.players.size === 0) {
     rooms.delete(r.id);
-  } else {
-    if (r.hostId === socket.id) r.hostId = r.players.keys().next().value;
-    sendRoom(r);
+  } else if (r.hostId === pid) {
+    const online = [...r.players.values()].find((q) => q.online);
+    r.hostId = (online || r.players.values().next().value).id;
   }
+  if (rooms.has(r.id)) sendRoom(r);
   broadcastRooms();
 }
 
+function leaveRoom(socket) {
+  const sess = socket.data.session;
+  const r = rooms.get(sess.roomId);
+  sess.roomId = null;
+  socket.join('lobby');
+  if (!r) return;
+  socket.leave(r.id);
+  removePlayer(r, sess.pid);
+}
+
 function joinRoom(socket, r) {
+  const sess = socket.data.session;
   socket.leave('lobby');
   socket.join(r.id);
-  socket.data.roomId = r.id;
+  sess.roomId = r.id;
   const pr = socket.data.profile;
-  r.players.set(socket.id, { id: socket.id, name: pr.name, look: pr.look });
+  r.players.set(sess.pid, { id: sess.pid, name: pr.name, look: pr.look, online: true, offlineSince: 0 });
   sendRoom(r);
   broadcastRooms();
 }
 
+// Put a returning player back where they were.
+function rejoin(socket, r, p) {
+  const sess = socket.data.session;
+  sess.roomId = r.id;
+  socket.leave('lobby');
+  socket.join(r.id);
+  const wasOffline = !p.online;
+  p.online = true;
+  p.offlineSince = 0;
+  socket.data.profile = { name: p.name, look: p.look };
+  sendRoom(r);
+  if (r.state === 'game' && r.game) {
+    p.tpSeq++; // ignore any stale positions from the old connection
+    p.y = 0;
+    socket.emit('gameStart', gamePayload(r));
+    sendInv(p);
+    if (wasOffline) feed(r, `🔌 ${p.name} is back!`);
+  }
+  broadcastRooms();
+}
+
 function ctx(socket) {
-  const r = rooms.get(socket.data.roomId);
-  const p = r?.players.get(socket.id);
+  const sess = socket.data.session;
+  const r = rooms.get(sess?.roomId);
+  const p = r?.players.get(sess.pid);
   return r && p ? { r, p, g: r.game } : null;
 }
 
+// Tidy up players who never came back, and rooms nobody is in.
+setInterval(() => {
+  const now = Date.now();
+  for (const r of [...rooms.values()]) {
+    for (const p of [...r.players.values()]) {
+      if (!p.online && r.state === 'lobby' && now - p.offlineSince > LOBBY_GRACE_MS) removePlayer(r, p.id);
+    }
+    if (!rooms.has(r.id)) continue;
+    const anyOnline = [...r.players.values()].some((p) => p.online);
+    if (anyOnline) r.emptySince = 0;
+    else {
+      r.emptySince ||= now;
+      if (now - r.emptySince > (r.state === 'game' ? EMPTY_GAME_ROOM_MS : LOBBY_GRACE_MS)) {
+        rooms.delete(r.id);
+        for (const s of sessions.values()) if (s.roomId === r.id) s.roomId = null;
+        broadcastRooms();
+      }
+    }
+  }
+  for (const [token, s] of sessions) {
+    if (!s.socketId && !s.roomId && now - s.lastSeen > 6 * 3600_000) sessions.delete(token);
+  }
+}, 5000);
+
+io.use((socket, next) => {
+  const t = socket.handshake.auth?.token;
+  socket.data.token = typeof t === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(t)
+    ? t
+    : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  next();
+});
+
 io.on('connection', (socket) => {
+  const token = socket.data.token;
+  let sess = sessions.get(token);
+  if (!sess) {
+    sess = { pid: 'u' + (nextPid++).toString(36) + Math.random().toString(36).slice(2, 6), socketId: null, roomId: null, lastSeen: Date.now() };
+    sessions.set(token, sess);
+  }
+  // Same player in a newer tab (or a refresh that beat the old disconnect): the newest wins.
+  if (sess.socketId && sess.socketId !== socket.id) {
+    const old = io.sockets.sockets.get(sess.socketId);
+    if (old) {
+      old.emit('replaced');
+      old.disconnect(true);
+    }
+  }
+  sess.socketId = socket.id;
+  sess.lastSeen = Date.now();
+  socket.data.session = sess;
   socket.data.profile = { name: 'Player', look: { color: 0, hat: 0 } };
-  socket.data.roomId = null;
-  socket.join('lobby');
-  socket.emit('rooms', [...rooms.values()].map(roomSummary));
+  socket.join('p:' + sess.pid);
+
+  const r = rooms.get(sess.roomId);
+  const p = r?.players.get(sess.pid);
+  socket.emit('hello', { pid: sess.pid, token, inRoom: !!p });
+  if (p) rejoin(socket, r, p);
+  else {
+    sess.roomId = null;
+    socket.join('lobby');
+    socket.emit('rooms', [...rooms.values()].map(roomSummary));
+  }
 
   socket.on('profile', (d) => {
     socket.data.profile = { name: cleanText(d?.name, 14, 'Player'), look: cleanLook(d?.look) };
@@ -469,12 +595,12 @@ io.on('connection', (socket) => {
   socket.on('listRooms', () => socket.emit('rooms', [...rooms.values()].map(roomSummary)));
 
   socket.on('createRoom', (d, cb) => {
-    if (socket.data.roomId) leaveRoom(socket);
+    if (sess.roomId) leaveRoom(socket);
     const id = 'r' + nextRoomId++;
     const r = {
       id, name: cleanText(d?.name, 24, `${socket.data.profile.name}'s room`),
-      hostId: socket.id, settings: R.sanitizeSettings(d?.settings, CATEGORIES.length),
-      players: new Map(), state: 'lobby', game: null,
+      hostId: sess.pid, settings: R.sanitizeSettings(d?.settings, CATEGORIES.length),
+      players: new Map(), state: 'lobby', game: null, emptySince: 0,
     };
     rooms.set(id, r);
     joinRoom(socket, r);
@@ -484,10 +610,14 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', (d, cb) => {
     const r = rooms.get(d?.id);
     if (!r) return ack(cb, { ok: false, msg: 'That room no longer exists.' });
+    const existing = r.players.get(sess.pid);
+    if (existing) {
+      rejoin(socket, r, existing);
+      return ack(cb, { ok: true });
+    }
     if (r.state !== 'lobby') return ack(cb, { ok: false, msg: 'That game has already started.' });
     if (r.players.size >= r.settings.maxPlayers) return ack(cb, { ok: false, msg: 'That room is full.' });
-    if (socket.data.roomId === r.id) return ack(cb, { ok: true });
-    if (socket.data.roomId) leaveRoom(socket);
+    if (sess.roomId) leaveRoom(socket);
     joinRoom(socket, r);
     ack(cb, { ok: true });
   });
@@ -496,7 +626,7 @@ io.on('connection', (socket) => {
 
   socket.on('updateSettings', (d) => {
     const c = ctx(socket);
-    if (!c || c.r.hostId !== socket.id || c.r.state !== 'lobby') return;
+    if (!c || c.r.hostId !== sess.pid || c.r.state !== 'lobby') return;
     c.r.settings = R.sanitizeSettings(d?.settings, CATEGORIES.length);
     if (typeof d?.name === 'string') c.r.name = cleanText(d.name, 24, c.r.name);
     if (c.r.settings.maxPlayers < c.r.players.size) c.r.settings.maxPlayers = c.r.players.size;
@@ -506,7 +636,7 @@ io.on('connection', (socket) => {
 
   socket.on('startGame', (_d, cb) => {
     const c = ctx(socket);
-    if (!c || c.r.hostId !== socket.id) return ack(cb, { ok: false, msg: 'Only the host can start.' });
+    if (!c || c.r.hostId !== sess.pid) return ack(cb, { ok: false, msg: 'Only the host can start.' });
     if (c.r.state !== 'lobby') return ack(cb, { ok: false, msg: 'Already started.' });
     startGame(c.r);
     ack(cb, { ok: true });
@@ -541,12 +671,27 @@ io.on('connection', (socket) => {
     const c = ctx(socket);
     if (!c?.g || c.g.phase !== 'raid' || c.p.dead) return;
     const p = c.p, now = Date.now();
-    if (p.frozenUntil > now || p.carry.length >= c.r.settings.carryLimit) return;
+    if (p.frozenUntil > now || p.stunUntil > now) return;
     const w = c.g.words.find((x) => x.id === d?.id);
     if (!w || w.carrier || w.base < 0 || w.base === p.base) return;
     const [sx, , sz] = R.slotLocal(w.slot);
     const [wx, wz] = R.toWorld(R.BASES[w.base], sx, sz);
     if (Math.hypot(wx - p.x, wz - p.z) > R.PICKUP_RANGE + 1.2) return;
+    if (w.decoy) {
+      // Trick word! Short stun and a little bounce away from the card.
+      if (now < p.stunImmuneUntil) return;
+      p.stunUntil = now + R.STUN_MS;
+      p.stunImmuneUntil = now + R.STUN_MS + R.STUN_IMMUNE_MS;
+      let dx = p.x - wx, dz = p.z - wz;
+      const dl = Math.hypot(dx, dz) || 1;
+      dx /= dl; dz /= dl;
+      damage(c.r, p, 0, null, 'stun', [dx * 5, 4, dz * 5]);
+      io.to(c.r.id).emit('stunned', { id: p.id, ms: R.STUN_MS });
+      const cat = CATEGORIES[c.g.bases[w.base].category];
+      toast(p.id, `😵 "${w.text}" isn't ${cat.icon} ${cat.name}! It was a trick word.`, 'bad');
+      return;
+    }
+    if (p.carry.length >= c.r.settings.carryLimit) return;
     const victim = c.g.bases[w.base];
     w.from = w.base;
     w.base = -1;
@@ -561,7 +706,7 @@ io.on('connection', (socket) => {
     const c = ctx(socket);
     if (!c?.g || c.p.dead) return;
     const p = c.p, now = Date.now();
-    if (now - p.lastSwing < R.STICK.cooldown || p.frozenUntil > now) return;
+    if (now - p.lastSwing < R.STICK.cooldown || p.frozenUntil > now || p.stunUntil > now) return;
     const B = R.BASES[p.base];
     const [lx, lz] = R.toLocal(B, p.x, p.z);
     if (!R.inCompound(lx, lz, 1)) return; // the stick only comes out at home
@@ -570,7 +715,7 @@ io.on('connection', (socket) => {
     const fx = Math.sin(p.ry), fz = Math.cos(p.ry);
     io.to(c.r.id).emit('swing', { id: p.id });
     for (const q of c.r.players.values()) {
-      if (q === p || q.dead) continue;
+      if (q === p || q.dead || !q.online) continue;
       const [qx, qz] = R.toLocal(B, q.x, q.z);
       if (!R.inCompound(qx, qz, 1.5)) continue;
       const dx = q.x - p.x, dz = q.z - p.z;
@@ -600,7 +745,7 @@ io.on('connection', (socket) => {
     if (def.solid) {
       const m = R.CELL / 2 + R.PLAYER_RADIUS;
       for (const q of c.r.players.values()) {
-        if (q.dead) continue;
+        if (q.dead || !q.online) continue;
         const [qx, qz] = R.toLocal(B, q.x, q.z);
         if (Math.abs(qx - cx) < m && Math.abs(qz - cz) < m) return toast(p.id, 'Someone is standing there.', 'bad');
       }
@@ -642,7 +787,21 @@ io.on('connection', (socket) => {
     toast(p.id, `Bought ${def.buyQty ? def.buyQty + ' x ' : ''}${def.name}! ${def.icon}`, 'good');
   });
 
-  socket.on('disconnect', () => leaveRoom(socket));
+  socket.on('disconnect', () => {
+    if (sess.socketId !== socket.id) return; // replaced by a newer connection
+    sess.socketId = null;
+    sess.lastSeen = Date.now();
+    const c = ctx(socket);
+    if (!c) return;
+    c.p.online = false;
+    c.p.offlineSince = Date.now();
+    if (c.g) {
+      dropCarry(c.r, c.p);
+      feed(c.r, `🔌 ${c.p.name} disconnected — they can rejoin any time.`);
+    }
+    sendRoom(c.r);
+    broadcastRooms();
+  });
 });
 
 server.listen(PORT, () => console.log(`Base Raider running on http://localhost:${PORT}`));

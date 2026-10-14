@@ -14,7 +14,46 @@ const CUTE_NAMES = ['Zippy', 'Bonk', 'Sparky', 'Noodle', 'Pickle', 'Bubbles', 'R
 if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
 const engine = new Engine($('game'));
 engine.world.setupDemo();
-const socket = io({ transports: ['websocket', 'polling'] });
+
+// ---------------- player identity ----------------
+// A token kept in this browser lets the server recognise you after a refresh,
+// a closed tab or a dropped connection, and put you straight back in your game.
+// sessionStorage keeps it per tab (refresh); localStorage remembers it after the
+// tab is closed. A second tab open at the same time gets its own token so you
+// can still test with two windows.
+const channel = 'BroadcastChannel' in window ? new BroadcastChannel('baseraider-tabs') : null;
+let myToken = null;
+channel?.addEventListener('message', (e) => {
+  if (e.data?.q === 'who' && myToken) channel.postMessage({ a: myToken });
+});
+function tokenInUse(t) {
+  if (!channel) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onMsg = (e) => { if (e.data?.a === t) finish(true); };
+    const finish = (v) => { channel.removeEventListener('message', onMsg); resolve(v); };
+    channel.addEventListener('message', onMsg);
+    channel.postMessage({ q: 'who' });
+    setTimeout(() => finish(false), 250);
+  });
+}
+const newToken = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Date.now().toString(36));
+const store = (kind, k, v) => { try { if (v === undefined) return window[kind].getItem(k); window[kind].setItem(k, v); } catch {} return null; };
+async function getToken() {
+  let t = store('sessionStorage', 'br_token');
+  if (!t) {
+    const saved = store('localStorage', 'br_token');
+    if (saved && !(await tokenInUse(saved))) t = saved;
+    else {
+      t = newToken();
+      if (!saved) store('localStorage', 'br_token', t);
+    }
+  }
+  store('sessionStorage', 'br_token', t);
+  return t;
+}
+myToken = await getToken();
+let myPid = null;
+const socket = io({ transports: ['websocket', 'polling'], auth: { token: myToken } });
 
 let game = null;
 let currentRoom = null;
@@ -153,6 +192,15 @@ function renderRooms() {
   el.innerHTML = rooms.map((r) => {
     const full = r.count >= r.max;
     const playing = r.state !== 'lobby';
+    const mine = r.members?.includes(myPid);
+    if (mine) {
+      return `<div class="room-card mine">
+      <div class="rc-main"><div class="rc-name">${escapeHtml(r.name)}</div>
+      <div class="rc-sub">You were in this ${playing ? 'game' : 'room'} · ${avatarDots(r.players)}</div></div>
+      <div class="rc-count">${r.count}/${r.max}</div>
+      <button class="btn orange" data-id="${r.id}">↩ Rejoin</button>
+    </div>`;
+    }
     return `<div class="room-card">
       <div class="rc-main"><div class="rc-name">${escapeHtml(r.name)}</div>
       <div class="rc-sub">Host: ${escapeHtml(r.host)} · ${avatarDots(r.players)}</div></div>
@@ -218,18 +266,19 @@ $('createGo').onclick = () => {
 function renderRoom() {
   const r = currentRoom;
   if (!r) return;
-  const host = r.hostId === socket.id;
+  const host = r.hostId === myPid;
   $('roomTitle').textContent = r.name;
   $('roomPlayers').innerHTML = r.players.map((p) => `
-    <div class="pcard ${p.id === socket.id ? 'me' : ''}">
+    <div class="pcard ${p.id === myPid ? 'me' : ''} ${p.online === false ? 'offline' : ''}">
       <div class="pav" style="background:${R.COLORS[p.look.color]}"><span>${HAT_EMOJI[p.look.hat] === '🚫' ? '🙂' : HAT_EMOJI[p.look.hat]}</span></div>
-      <div class="pname">${escapeHtml(p.name)}${p.id === r.hostId ? ' 👑' : ''}${p.id === socket.id ? ' <small>(you)</small>' : ''}</div>
+      <div class="pname">${escapeHtml(p.name)}${p.id === r.hostId ? ' 👑' : ''}${p.id === myPid ? ' <small>(you)</small>' : ''}${p.online === false ? ' <small>🔌 reconnecting…</small>' : ''}</div>
     </div>`).join('') +
     Array.from({ length: Math.max(0, r.settings.maxPlayers - r.players.length) }, () => `<div class="pcard empty"><div class="pav">?</div><div class="pname">Waiting…</div></div>`).join('');
   const s = r.settings;
   $('roomSettings').innerHTML = `
     <div>🛠️ Prep: <b>${s.prepTime}s</b></div><div>⚔️ Raid: <b>${s.raidTime}s</b></div>
     <div>🔁 Rounds: <b>${s.rounds}</b></div><div>📝 Words/house: <b>${s.wordsPerBase}</b></div>
+    <div>😵 Trick words: <b>${s.decoysPerBase}</b></div>
     <div>🎒 Carry: <b>${s.carryLimit}</b></div><div>🪙 Coins: <b>${s.startCoins}</b></div>
     <div class="cats">${s.categories.map((i) => `<span class="chip" style="background:${CATEGORIES[i].color}">${CATEGORIES[i].icon} ${CATEGORIES[i].name}</span>`).join(' ')}</div>`;
   $('editSettings').classList.toggle('hidden', !host);
@@ -266,10 +315,10 @@ function renderEnd(ranking) {
       <div class="pod-block">${medals[i]}</div></div>`;
   }).join('');
   $('results').innerHTML = `<tr><th>#</th><th>Player</th><th>📝 Words</th><th>💰 Stolen</th><th>💥 KOs</th><th>Points</th></tr>` +
-    ranking.map((p, n) => `<tr class="${p.id === socket.id ? 'me' : ''}"><td>${n + 1}</td><td><span class="dot" style="background:${R.COLORS[p.look.color]}"></span> ${escapeHtml(p.name)}</td>
+    ranking.map((p, n) => `<tr class="${p.id === myPid ? 'me' : ''}"><td>${n + 1}</td><td><span class="dot" style="background:${R.COLORS[p.look.color]}"></span> ${escapeHtml(p.name)}</td>
       <td>${p.words}</td><td>${p.stolen}</td><td>${p.kos}</td><td><b>${p.points}</b></td></tr>`).join('');
   const winner = ranking[0];
-  $('winnerText').textContent = winner ? (winner.id === socket.id ? '🎉 You win! 🎉' : `🏆 ${winner.name} wins!`) : 'Game over';
+  $('winnerText').textContent = winner ? (winner.id === myPid ? '🎉 You win! 🎉' : `🏆 ${winner.name} wins!`) : 'Game over';
 }
 $('backToRoom').onclick = () => {
   sfx.click();
@@ -286,15 +335,34 @@ $('backToMenu').onclick = () => {
 socket.on('connect', () => {
   $('conn').classList.add('hidden');
   socket.emit('profile', profile);
-  if (game || currentRoom) {
-    // The server forgets us when we drop, so start again from the menu.
+});
+// The server tells us who we are, and whether it put us back into a room.
+socket.on('hello', (d) => {
+  myPid = d.pid;
+  if (d.token && d.token !== myToken) {
+    myToken = d.token;
+    store('sessionStorage', 'br_token', d.token);
+    store('localStorage', 'br_token', d.token);
+  }
+  if (!d.inRoom && (game || currentRoom)) {
     if (game) { game.destroy(); game = null; engine.mode = null; engine.world.setupDemo(); }
     currentRoom = null;
     show('menu');
-    menuToast('Reconnected — please rejoin a room.');
+    menuToast('That room has closed.');
   }
+  renderRooms();
 });
-socket.on('disconnect', () => $('conn').classList.remove('hidden'));
+socket.on('replaced', () => {
+  $('conn').textContent = '🪟 You opened Base Raider in another tab — refresh this page to play here instead.';
+  $('conn').classList.remove('hidden');
+  replaced = true;
+});
+let replaced = false;
+socket.on('disconnect', () => {
+  if (replaced) return;
+  $('conn').textContent = '🔌 Connection lost — reconnecting… (you will jump straight back into your game)';
+  $('conn').classList.remove('hidden');
+});
 socket.on('rooms', (list) => { rooms = list; renderRooms(); });
 socket.on('room', (r) => {
   currentRoom = r;
@@ -305,7 +373,7 @@ socket.on('gameStart', (d) => {
   $('createModal').classList.add('hidden');
   if (game) game.destroy();
   show('game');
-  game = new Game(engine, socket, d);
+  game = new Game(engine, socket, d, myPid);
   engine.mode = game;
 });
 socket.on('gameOver', (d) => {
@@ -314,7 +382,7 @@ socket.on('gameOver', (d) => {
   engine.world.setupDemo();
   renderEnd(d.ranking);
   show('endScreen');
-  if (d.ranking[0]?.id === socket.id) sfx.win(); else sfx.horn();
+  if (d.ranking[0]?.id === myPid) sfx.win(); else sfx.horn();
 });
 
 document.addEventListener('pointerdown', () => initAudio(), { once: true });

@@ -42,7 +42,7 @@
           <h3>How to play</h3>
           <ol>
             <li><b>🛠️ Prep:</b> place your <b>20 blocks</b> &amp; buy traps to protect your house.</li>
-            <li><b>⚔️ Raid:</b> run into other houses, grab their <b>word cards</b> and carry them home.</li>
+            <li><b>⚔️ Raid:</b> run into other houses, grab the <b>word cards that fit the house's category</b> and carry them home. Watch out for <b>trick words</b> — they stun you!</li>
             <li><b>🛡️ At home</b> you hold a stick — whack raiders! <b>🏃 Away</b> you're faster but unarmed.</li>
             <li>Most points when time runs out wins! <b>10 pts</b> per word in your house, <b>2 pts</b> per knock-out.</li>
           </ol>
@@ -125,6 +125,7 @@
       <div id="myCategory"></div>
     </div>
 
+    <div id="modePill" class="whack">🏏 WHACK MODE</div>
     <div id="buildHint" class="hidden"></div>
     <div id="hotbar"></div>
     <div id="actionBtns">
@@ -135,6 +136,7 @@
     <div id="clickToPlay" class="hidden"><div>🖱️ Click to play</div><small>WASD move · Mouse look · Space jump · H for help</small></div>
     <div id="deathOverlay" class="hidden"><div class="d-title">💫 Knocked out!</div><div>Respawning at your house in <b id="deathCount">3</b>…</div></div>
     <div id="frozenOverlay" class="hidden"></div>
+    <div id="stunOverlay" class="hidden"><div>😵 Stunned! That was a trick word.</div></div>
     <div id="hurtFlash"></div>
 
     <div id="touch" class="hidden">
@@ -168,6 +170,8 @@
           <h3>Phases</h3>
           <p><b>🛠️ Prep:</b> other bases are locked. Build walls with your blocks and buy defences.<br>
           <b>⚔️ Raid:</b> sneak into other houses, touch word cards to grab them, and run home to bank them!</p>
+          <h3>Trick words 😵</h3>
+          <p>Each house's sign shows its category (e.g. 🐾 Animals). Only grab words that fit! Some cards are <b>trick words</b> from other categories — touch one and you're stunned for a second. Stolen words go on your gold <b>🏆 LOOT</b> shelf, and other raiders can steal them from there.</p>
           <h3>Roles</h3>
           <p><b>🛡️ Defending</b> (inside your compound): you hold a stick — click to whack raiders back.<br>
           <b>🏃 Raiding</b> (anywhere else): no weapon, but you run much faster. Each word you carry slows you a little.</p>
@@ -179,8 +183,9 @@
             <tr><td>W A S D</td><td>Move</td></tr>
             <tr><td>Mouse</td><td>Look (click to lock)</td></tr>
             <tr><td>Space</td><td>Jump (jump over floor traps!)</td></tr>
-            <tr><td>Click</td><td>Whack / place item</td></tr>
-            <tr><td>B / 1-7</td><td>Build mode / pick item</td></tr>
+            <tr><td>1 / F / Esc</td><td>🏏 Whack mode (attack)</td></tr>
+            <tr><td>B / 2-8</td><td>🔨 Build mode / pick item</td></tr>
+            <tr><td>Click</td><td>Whack (or place in build mode)</td></tr>
             <tr><td>R / Right-click</td><td>Remove your item</td></tr>
             <tr><td>Q</td><td>Shop (at home)</td></tr>
             <tr><td>Tab</td><td>Big scoreboard</td></tr>

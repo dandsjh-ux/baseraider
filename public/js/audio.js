@@ -70,6 +70,7 @@ export const sfx = {
   shoot: () => { noise(0.1, { vol: 0.3, freq: 2000 }); tone(500, 0.1, { type: 'sine', vol: 0.2, slide: -200 }); },
   splat: () => noise(0.15, { vol: 0.35, freq: 3000 }),
   freeze: () => { tone(1500, 0.3, { type: 'sine', vol: 0.2, slide: 800 }); tone(2200, 0.3, { type: 'sine', vol: 0.12, delay: 0.05 }); },
+  stun: () => { tone(900, 0.12, { type: 'square', vol: 0.18, slide: -500 }); tone(1200, 0.25, { type: 'sine', vol: 0.2, delay: 0.1, slide: 400 }); tone(1500, 0.25, { type: 'sine', vol: 0.15, delay: 0.25, slide: -300 }); },
   boing: () => tone(150, 0.35, { type: 'sine', vol: 0.5, slide: 600 }),
   spike: () => { noise(0.08, { vol: 0.4, freq: 5000 }); tone(700, 0.1, { type: 'square', vol: 0.15 }); },
   ko: () => { tone(500, 0.5, { type: 'triangle', vol: 0.4, slide: -420 }); },

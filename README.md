@@ -12,7 +12,9 @@ Built with **three.js** in the browser and **Node.js + socket.io** on the server
 4. **⚔️ Raid phase:**
    - Inside your own compound you are **defending**. You hold a stick that does damage with a small knockback.
    - Anywhere else you are **raiding**. You have no weapon but you run about 40% faster. Each word you carry slows you down a little.
-   - Touch word cards in another house to pick them up (3 at a time by default). Run back into your own house to bank them.
+   - Each house's sign shows its **category** (for example 🐾 Animals). Touch word cards that **fit that category** to pick them up (3 at a time by default), then run back into your own house to bank them.
+   - **Trick words:** every house also has a few words from *other* categories. They look exactly the same as the real ones. Touch one and you're **stunned for 1 second** and bounced back. The cards are spread out so careful readers can weave between them.
+   - Stolen words go on your gold **🏆 LOOT shelf** by the front door. Other raiders can steal them from there, and stealing from the loot shelf is always safe.
    - At 0 HP you're knocked out. Any words you were carrying go back to the house they came from, and you respawn at your own house after 3 seconds.
 5. More rounds can follow, each with a prep phase. Everyone gets +50 coins at the start of each new round.
 6. **Scoring:** 10 points per word in your house plus 2 points per knock-out. The highest score at the end wins, and there's a podium screen.
@@ -37,7 +39,7 @@ You can place up to 4 towers per base. Raiders can **jump over** floor traps.
 - Every placement is checked with a flood fill (`shared/rules.js → keepsPathOpen`). Every open square must stay reachable from the front gate, so nobody can wall off the compound or the house, or trap a player in a sealed pocket.
 
 ### Room settings
-Max players (2–6), prep time, raid time, number of raid rounds, words per house, how many words a raider can carry, starting coins, and which of the **12 word categories** to use. The categories are Animals, Vehicles, Stationery, Fruit & Veg, Sports, Weather, Music, Jobs, Clothing, Space, Ocean Life and Kitchen, all at a Year 4–6 level. You can edit the lists in `shared/words.js`.
+Max players (2–6), prep time, raid time, number of raid rounds, words per house, **trick words per house** (0–8), how many words a raider can carry, starting coins, and which of the **12 word categories** to use. The categories are Animals, Vehicles, Stationery, Fruit & Veg, Sports, Weather, Music, Jobs, Clothing, Space, Ocean Life and Kitchen, all at a Year 4–6 level. You can edit the lists in `shared/words.js`.
 
 ### Controls
 | | Keyboard / mouse | Touch |
@@ -45,13 +47,17 @@ Max players (2–6), prep time, raid time, number of raid rounds, words per hous
 | Move | WASD / arrows | left joystick |
 | Look | mouse (click to lock), wheel to zoom | drag right side |
 | Jump | Space | ⤒ |
-| Whack / place | left click | ✋ |
-| Build mode / pick item | B / 1–7 | 🔨 / tap hotbar |
+| 🏏 Whack mode (attack) | 1 / F / Esc | 🔨 button toggles back |
+| 🔨 Build mode / pick item | B / 2–8 | 🔨 / tap hotbar |
+| Whack (or place in build mode) | left click | 🏏 / 📦 |
 | Remove own item | R or right click | 🗑️ |
 | Shop (at home) | Q | 🛒 |
 | Scoreboard / help / mute | Tab / H / M | |
 
-In build mode the ghost box appears in front of you. Tilt the camera down or up to aim closer or further.
+You start in **Whack mode**, and a pill above the hotbar always shows which mode you're in. In build mode the ghost box appears in front of you. Tilt the camera down or up to aim closer or further.
+
+### Rejoining
+Each browser keeps a player token, so if a player refreshes, closes the tab or loses Wi-Fi, opening the game again puts them **straight back into their room or game** with their base, coins and items. A **↩ Rejoin** button also appears in the room list. Words they were carrying go back to the house they came from. A disconnected player's place in a waiting room is kept for 45 seconds, and a game nobody is connected to closes after 5 minutes. Opening a second tab at the same time gives you a separate player, which is handy for testing.
 
 ## Running locally
 

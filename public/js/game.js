@@ -3,7 +3,7 @@ import * as R from '/shared/rules.js';
 import { CATEGORIES } from '/shared/words.js';
 import { Stickman } from './stickman.js';
 import { makeItemMesh, makeGhost } from './items.js';
-import { makeWordSprite, textTexture, damp, angleDamp, fmtTime, escapeHtml } from './util.js';
+import { makeWordSprite, wordCardTexture, textTexture, damp, angleDamp, fmtTime, escapeHtml } from './util.js';
 import { sfx, toggleMute, isMuted } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,13 +11,13 @@ let IS_TOUCH = matchMedia('(pointer: coarse)').matches; // primary input is a fi
 const GRAVITY = 30, JUMP_V = 10.5;
 
 export class Game {
-  constructor(engine, socket, init) {
+  constructor(engine, socket, init, myId) {
     this.engine = engine;
     this.scene = engine.scene;
     this.camera = engine.camera;
     this.world = engine.world;
     this.socket = socket;
-    this.me = socket.id;
+    this.me = myId;
     this.settings = init.settings;
     this.phase = init.phase;
     this.round = init.round;
@@ -56,6 +56,7 @@ export class Game {
     this.ghost = makeGhost();
     this.group.add(this.ghost.group);
     this.buildGridOverlay();
+    (init.items || []).forEach((list, b) => this.setItems(b, list));
 
     this.shots = new Map();
     this.particles = [];
@@ -85,7 +86,7 @@ export class Game {
     this.players.set(p.id, {
       id: p.id, name: p.name, look: p.look, base: p.base, model,
       pos: new THREE.Vector3(p.x, 0, p.z), target: new THREE.Vector3(p.x, 0, p.z), ry: p.ry, tRy: p.ry,
-      hp: R.MAX_HP, dead: false, frozenUntil: 0, slowed: false, coins: 0, kos: 0, stolen: 0, speed: 0, present: true,
+      hp: R.MAX_HP, dead: false, frozenUntil: 0, stunUntil: 0, slowed: false, coins: 0, kos: 0, stolen: 0, words: 0, speed: 0, present: true,
     });
   }
   colorOf(id) {
@@ -115,6 +116,9 @@ export class Game {
         s.visible = false;
       } else {
         s.visible = true;
+        const loot = R.isLootSlot(w.s);
+        s.material.map = wordCardTexture(w.t, w.c, loot ? 'loot' : 'plain');
+        s.scale.set(2.2 * (loot ? 0.8 : 1), 0.86 * (loot ? 0.8 : 1), 1);
         const [lx, ly, lz] = R.slotLocal(w.s);
         const [x, z] = R.toWorld(R.BASES[w.b], lx, lz);
         s.position.set(x, ly, z);
@@ -123,7 +127,7 @@ export class Game {
       }
     }
     for (const p of this.players.values()) p.model.setCarry(list.filter((w) => w.k === p.id));
-    R.BASES.forEach((_, k) => this.world.setPedestals(k, new Set(list.filter((w) => w.b === k && !w.k && w.s < R.SLOTS_PER_LAYER).map((w) => w.s))));
+    R.BASES.forEach((_, k) => this.world.setPedestals(k, new Set(list.filter((w) => w.b === k && !w.k && !R.isLootSlot(w.s)).map((w) => w.s))));
     const after = list.filter((w) => w.k === this.me);
     if (after.length > before) {
       sfx.pickup();
@@ -131,10 +135,10 @@ export class Game {
       this.toast(`Got "${w.t}"! Run it back to your house! 🏃`, 'good');
     }
   }
+  // Real words in a house (the server counts them, since trick words look identical).
   wordsIn(k) {
-    let n = 0;
-    for (const w of this.words) if (w.b === k && !w.k) n++;
-    return n;
+    const owner = this.players.get(this.bases[k].owner);
+    return owner ? owner.words : 0;
   }
 
   // ---------------- items ----------------
@@ -233,6 +237,14 @@ export class Game {
         if (d.id === this.me || (p && p.pos.distanceTo(this.local.pos) < 25)) sfx.freeze();
         if (d.id === this.me) this.toast('🥶 You got frozen!', 'bad');
       },
+      stunned: (d) => {
+        const p = this.players.get(d.id);
+        if (p) p.stunUntil = performance.now() + d.ms;
+        if (d.id === this.me) this.stunGraceUntil = performance.now() + d.ms + R.STUN_IMMUNE_MS;
+        const pos = d.id === this.me ? this.local.pos : p?.pos;
+        if (pos) this.burst(pos.clone().setY(pos.y + 2.3), '#ffe14d', 10, 3, 0.12);
+        if (d.id === this.me || (p && p.pos.distanceTo(this.local.pos) < 25)) sfx.stun();
+      },
       shot: (d) => this.onShot(d),
       shotEnd: (d) => this.onShotEnd(d),
       trap: (d) => {
@@ -285,7 +297,15 @@ export class Game {
       ids.add(s.id);
       p.hp = s.hp;
       p.frozenUntil = now + s.fz;
+      p.stunUntil = now + (s.sn || 0);
       p.slowed = !!s.sl;
+      p.words = s.w ?? p.words;
+      const present = !s.off;
+      if (present !== p.present && s.id !== this.me) {
+        p.present = present;
+        p.model.group.visible = present && !p.dead;
+        if (present) p.pos.set(s.x, s.y, s.z);
+      }
       p.coins = s.c;
       p.kos = s.k;
       p.stolen = s.st;
@@ -302,7 +322,7 @@ export class Game {
       if (!s.d && p.dead) {
         p.dead = false;
         p.pos.copy(p.target);
-        p.model.group.visible = true;
+        p.model.group.visible = p.present;
       }
     }
     // Players who left
@@ -411,8 +431,11 @@ export class Game {
       el.addEventListener(ev, fn, opts);
       this.listeners.push([el, ev, fn, opts]);
     };
+    // Buttons must never keep keyboard focus, or Space (jump) would "click" them again.
+    on(document, 'mousedown', (e) => { if (e.target.closest?.('button')) e.preventDefault(); });
     on(window, 'keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
+      if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur();
       this.keys.add(e.code);
       switch (e.code) {
         case 'KeyB': this.toggleBuild(); break;
@@ -421,9 +444,10 @@ export class Game {
         case 'KeyH': $('helpPanel').classList.toggle('hidden'); break;
         case 'KeyM': this.toggleMute(); break;
         case 'Tab': e.preventDefault(); $('scoreboard').classList.add('big'); break;
-        case 'Escape': this.closePanels(); break;
+        case 'Escape': this.closePanels(); this.attackMode(); break;
+        case 'Digit1': case 'KeyF': this.attackMode(); break;
         default:
-          if (/^Digit[1-7]$/.test(e.code)) this.selectItem(R.ITEM_ORDER[+e.code.slice(5) - 1]);
+          if (/^Digit[2-8]$/.test(e.code)) this.selectItem(R.ITEM_ORDER[+e.code.slice(5) - 2]);
       }
       if (e.code === 'Space') e.preventDefault();
     });
@@ -502,7 +526,7 @@ export class Game {
       const btn = (id, fn) => on($(id), 'pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
       btn('tJump', () => { this.touchJump = true; });
       btn('tAction', () => this.action());
-      btn('tBuild', () => this.toggleBuild());
+      btn('tBuild', () => (this.buildMode ? this.attackMode() : this.toggleBuild(true)));
       btn('tShop', () => this.toggleShop());
       btn('tRemove', () => this.removeAtGhost());
     };
@@ -511,7 +535,7 @@ export class Game {
 
     // HUD buttons
     on($('shopBtn'), 'click', () => this.toggleShop());
-    on($('buildBtn'), 'click', () => this.toggleBuild());
+    on($('buildBtn'), 'click', () => (this.buildMode ? this.attackMode() : this.toggleBuild(true)));
     on($('helpBtn'), 'click', () => $('helpPanel').classList.toggle('hidden'));
     on($('scoreBtn'), 'click', () => $('scoreboard').classList.toggle('open'));
     on($('muteBtn'), 'click', () => this.toggleMute());
@@ -540,6 +564,16 @@ export class Game {
     $('muteBtn').textContent = m ? '🔇' : '🔊';
   }
 
+  // Index of the other player's compound you're standing in, or -1.
+  visitingBase() {
+    for (const b of this.bases) {
+      if (b.closed || b.index === this.myBase) continue;
+      const [lx, lz] = R.toLocal(R.BASES[b.index], this.local.pos.x, this.local.pos.z);
+      if (R.inCompound(lx, lz)) return b.index;
+    }
+    return -1;
+  }
+
   atHome() {
     const [lx, lz] = R.toLocal(this.myB, this.local.pos.x, this.local.pos.z);
     return R.inCompound(lx, lz);
@@ -556,8 +590,15 @@ export class Game {
     sfx.click();
     this.renderHotbar();
   }
+  attackMode() {
+    if (!this.buildMode) return;
+    this.buildMode = false;
+    sfx.click();
+    this.renderHotbar();
+  }
   selectItem(type) {
     if (!type) return;
+    if (type === 'whack') return this.attackMode();
     this.selected = type;
     if (!this.buildMode) this.toggleBuild(true);
     this.renderHotbar();
@@ -581,7 +622,7 @@ export class Game {
   action() {
     const me = this.mePlayer;
     const now = performance.now();
-    if (me.dead || me.frozenUntil > now) return;
+    if (me.dead || me.frozenUntil > now || me.stunUntil > now) return;
     if (this.buildMode) {
       this.updateGhost(this.atHome());
       const g = this.ghostCell;
@@ -638,18 +679,24 @@ export class Game {
 
   renderHotbar() {
     const el = $('hotbar');
-    el.innerHTML = R.ITEM_ORDER.map((t, n) => {
-      const d = R.ITEMS[t];
-      const c = this.inv[t] | 0;
-      return `<div class="slot ${this.buildMode && this.selected === t ? 'sel' : ''} ${c ? '' : 'empty'}" data-t="${t}" title="${d.name}">
-        <span class="key">${n + 1}</span><span class="ic">${d.icon}</span><span class="ct">${c}</span></div>`;
-    }).join('');
+    el.innerHTML = `<div class="slot whack ${this.buildMode ? '' : 'sel'}" data-t="whack" title="Whack mode (1 / F / Esc)">
+        <span class="key">1</span><span class="ic">🏏</span><span class="ct">Whack</span></div><div class="sep"></div>` +
+      R.ITEM_ORDER.map((t, n) => {
+        const d = R.ITEMS[t];
+        const c = this.inv[t] | 0;
+        return `<div class="slot ${this.buildMode && this.selected === t ? 'sel' : ''} ${c ? '' : 'empty'}" data-t="${t}" title="${d.name}">
+        <span class="key">${n + 2}</span><span class="ic">${d.icon}</span><span class="ct">${c}</span></div>`;
+      }).join('');
     el.querySelectorAll('.slot').forEach((s) => s.addEventListener('pointerdown', (e) => { e.stopPropagation(); this.selectItem(s.dataset.t); }));
     $('buildBtn').classList.toggle('on', this.buildMode);
+    $('buildBtn').textContent = this.buildMode ? '🏏 Whack (1)' : '🔨 Build (B)';
+    $('modePill').className = this.buildMode ? 'build' : 'whack';
+    $('modePill').textContent = this.buildMode ? `🔨 BUILD MODE — ${R.ITEMS[this.selected].name}` : '🏏 WHACK MODE';
+    $('tAction').textContent = this.buildMode ? '📦' : '🏏';
     $('buildHint').classList.toggle('hidden', !this.buildMode);
     if (this.buildMode) {
       const d = R.ITEMS[this.selected];
-      $('buildHint').innerHTML = `<b>${d.icon} ${d.name}</b> — ${IS_TOUCH ? 'tap ✋ to place, 🗑️ to remove' : 'click to place · right-click/R to remove · B to exit'}<br><small>${d.solid ? 'Outside the house only' : 'Floor trap: anywhere in your compound or house'} · tilt camera to aim closer/further</small>`;
+      $('buildHint').innerHTML = `<b>${d.icon} ${d.name}</b> — ${IS_TOUCH ? 'tap ✋ to place, 🗑️ to remove' : 'click to place · right-click/R to remove · 1 / Esc to go back to whacking'}<br><small>${d.solid ? 'Outside the house only' : 'Floor trap: anywhere in your compound or house'} · tilt camera to aim closer/further</small>`;
     }
   }
 
@@ -705,9 +752,17 @@ export class Game {
     $('phaseBar').className = this.phase;
     $('phaseTimer').textContent = fmtTime(left);
     $('roundInfo').textContent = `Round ${this.round}/${this.settings.rounds}`;
-    $('phaseHint').textContent = this.phase === 'prep'
-      ? 'Build defences! Other bases are locked.'
-      : 'Steal words from other houses & bring them home!';
+    const visiting = this.visitingBase();
+    if (visiting >= 0 && this.phase === 'raid') {
+      const c = CATEGORIES[this.bases[visiting].category];
+      $('phaseHint').innerHTML = `🎯 Grab only <b>${c.icon} ${escapeHtml(c.name)}</b> words — trick words stun you!`;
+      if (this.lastVisited !== visiting) this.showBanner(`${c.icon} ${c.name}`, 'Only grab words that fit! Trick words stun you.', true);
+    } else {
+      $('phaseHint').textContent = this.phase === 'prep'
+        ? 'Build defences! Other bases are locked.'
+        : 'Steal words from other houses & bring them home!';
+    }
+    this.lastVisited = visiting;
     const sec = Math.ceil(left / 1000);
     if (sec <= 5 && sec > 0 && sec !== this.lastTickSec) {
       this.lastTickSec = sec;
@@ -721,6 +776,10 @@ export class Game {
     $('hpText').textContent = `${hp} HP`;
     $('coins').textContent = this.coins;
     const home = this.atHome();
+    if (!this.buildMode) {
+      $('modePill').className = home ? 'whack' : 'raiding';
+      $('modePill').textContent = home ? '🏏 WHACK MODE' : '🏃 RAIDING — no stick away from home';
+    }
     $('role').className = home ? 'defend' : 'raid';
     $('role').innerHTML = home
       ? '🛡️ <b>DEFENDING</b> — whack raiders with your stick!'
@@ -739,16 +798,17 @@ export class Game {
       $('deathCount').textContent = Math.ceil(t / 1000) || '...';
     }
     $('frozenOverlay').classList.toggle('hidden', !(me.frozenUntil > now) || dead);
+    $('stunOverlay').classList.toggle('hidden', !(me.stunUntil > now) || dead);
 
     // Scoreboard
-    const rows = [...this.players.values()].filter((p) => p.present).map((p) => {
-      const words = this.wordsIn(p.base);
+    const rows = [...this.players.values()].map((p) => {
+      const words = p.words;
       return { p, words, pts: R.points(words, p.kos) };
     }).sort((a, b) => b.pts - a.pts);
     $('scoreboard').innerHTML = `<div class="sb-head"><span></span><span>Player</span><span title="Words in house">📝</span><span title="Knock-outs">💥</span><span>Pts</span></div>` +
       rows.map(({ p, words, pts }, n) => `<div class="sb-row ${p.id === this.me ? 'me' : ''}">
         <span class="dot" style="background:${R.COLORS[p.look.color]}"></span>
-        <span class="nm">${n === 0 ? '👑 ' : ''}${escapeHtml(p.name)}<small>${CATEGORIES[this.bases[p.base].category].icon}</small></span>
+        <span class="nm">${n === 0 ? '👑 ' : ''}${escapeHtml(p.name)}${p.present ? '' : ' 🔌'}<small>${CATEGORIES[this.bases[p.base].category].icon}</small></span>
         <span>${words}</span><span>${p.kos}</span><span class="pts">${pts}</span></div>`).join('');
 
     // Raider alert
@@ -835,6 +895,7 @@ export class Game {
     const me = this.mePlayer;
     const L = this.local;
     const frozen = me.frozenUntil > now;
+    const stunned = me.stunUntil > now;
     const dead = me.dead;
     const home = this.atHome();
     me.model.setMode(home ? 'defend' : 'raid');
@@ -854,7 +915,7 @@ export class Game {
     let speed = home ? R.SPEED_DEFEND : R.SPEED_RAID;
     speed *= 1 - R.CARRY_SLOWDOWN * carrying;
     if (me.slowed) speed *= R.ITEMS.slime.slow;
-    if (frozen || dead) speed = 0;
+    if (frozen || stunned || dead) speed = 0;
     L.vel.x = damp(L.vel.x, mx * speed, 14, dt);
     L.vel.z = damp(L.vel.z, mz * speed, 14, dt);
     L.kb.multiplyScalar(Math.exp(-3.5 * dt));
@@ -863,7 +924,7 @@ export class Game {
       L.pos.z += (L.vel.z + L.kb.z) * dt;
       const wantJump = k.has('Space') || this.touchJump;
       this.touchJump = false;
-      if (wantJump && L.grounded && !frozen) {
+      if (wantJump && L.grounded && !frozen && !stunned) {
         L.vy = me.slowed ? JUMP_V * 0.6 : JUMP_V;
         L.grounded = false;
       }
@@ -881,7 +942,7 @@ export class Game {
     me.model.group.position.copy(L.pos);
     me.model.group.rotation.y = L.ry;
     const hspeed = Math.hypot(L.vel.x, L.vel.z);
-    me.model.update(dt, { speed: hspeed, air: !L.grounded, frozen, time: this.time });
+    me.model.update(dt, { speed: hspeed, air: !L.grounded, frozen, stunned, time: this.time });
 
     if (!dead && now - L.lastSend > 50) {
       L.lastSend = now;
@@ -892,7 +953,9 @@ export class Game {
     }
 
     // ---- word pickup ----
-    if (this.phase === 'raid' && !dead && !frozen && carrying < this.settings.carryLimit) {
+    // Touching any card asks the server: real words get picked up (if your bag has
+    // room), trick words stun you.
+    if (this.phase === 'raid' && !dead && !frozen && !stunned && now > (this.stunGraceUntil || 0)) {
       for (const w of this.words) {
         if (w.k || w.b < 0 || w.b === this.myBase) continue;
         const s = this.wordSprites.get(w.id);
@@ -900,6 +963,10 @@ export class Game {
         if ((this.pickupCooldown.get(w.id) || 0) > now) continue;
         this.pickupCooldown.set(w.id, now + 600);
         this.socket.emit('pickup', { id: w.id });
+        if (carrying >= this.settings.carryLimit && now - (this.lastFullToast || 0) > 4000) {
+          this.lastFullToast = now;
+          this.toast('🎒 Your bag is full — run home to bank your words!');
+        }
         break;
       }
     }
@@ -919,7 +986,7 @@ export class Game {
       p.model.group.rotation.y = p.ry;
       const [lx, lz] = R.toLocal(R.BASES[p.base], p.pos.x, p.pos.z);
       p.model.setMode(R.inCompound(lx, lz) ? 'defend' : 'raid');
-      p.model.update(dt, { speed: p.speed, air: p.pos.y > 0.15, frozen: p.frozenUntil > now, time: this.time });
+      p.model.update(dt, { speed: p.speed, air: p.pos.y > 0.15, frozen: p.frozenUntil > now, stunned: p.stunUntil > now, time: this.time });
       p.model.tag?.set(p.hp);
     }
 

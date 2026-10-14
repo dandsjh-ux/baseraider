@@ -289,7 +289,7 @@ export class World {
       this.buildHouse(base, boxes);
 
       // Pedestals for the word cards
-      for (let n = 0; n < R.SLOTS_PER_LAYER; n++) {
+      for (let n = 0; n < R.MAIN_SLOTS; n++) {
         const [x, , z] = R.slotLocal(n);
         pedestals.add(wm(x, 0.13, z), '#ffffff');
       }
@@ -440,6 +440,19 @@ export class World {
     step.receiveShadow = true;
     g.add(step);
 
+    // Loot shelf for stolen words (either side of the front door)
+    const shelfMat = lambert('#d9a441');
+    for (const sx of [-1, 1]) {
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.5, 1.0), shelfMat);
+      bench.position.set(sx * 6.2, 0.25, R.LOOT_Z);
+      bench.castShadow = bench.receiveShadow = true;
+      g.add(bench);
+    }
+    const lootSign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.65), new THREE.MeshBasicMaterial({ map: textTexture('🏆 LOOT', { bg: '#ffd23f', color: '#6b4a00', w: 384, h: 96 }) }));
+    lootSign.position.set(0, WH - 0.3, H.z1 - T - 0.03);
+    lootSign.rotation.y = Math.PI;
+    g.add(lootSign);
+
     // Windows (glowing, cosy)
     const winMat = new THREE.MeshLambertMaterial({ color: '#ffe9a8', emissive: '#ffb84d', emissiveIntensity: 0.6 });
     const winFrame = lambert('#8a5428');
@@ -455,11 +468,11 @@ export class World {
       bar.rotation.y = ry;
       g.add(fr, gl, bar);
     };
-    addWindow(-5, H.z1 - T / 2, 0);
-    addWindow(5, H.z1 - T / 2, 0);
-    addWindow(-5, H.z0 + T / 2, 0);
-    addWindow(5, H.z0 + T / 2, 0);
-    for (const z of [-7, -1]) {
+    for (const x of [-7.5, 7.5]) {
+      addWindow(x, H.z1 - T / 2, 0);
+      addWindow(x, H.z0 + T / 2, 0);
+    }
+    for (const z of [H.z0 + 3, cz, H.z1 - 3]) {
       addWindow(H.x0 + T / 2, z, Math.PI / 2);
       addWindow(H.x1 - T / 2, z, Math.PI / 2);
     }
@@ -468,7 +481,7 @@ export class World {
     base.roofMat = lambert('#e0533d', { transparent: true });
     base.gableMat = lambert('#fff1d6', { transparent: true, side: THREE.DoubleSide });
     const roof = new THREE.Group();
-    const rise = 3.0, over = 0.7;
+    const rise = 4.0, over = 0.7;
     const run = d / 2 + over;
     const ang = Math.atan2(rise + 0.3, run);
     const len = Math.hypot(run, rise + 0.3);
@@ -492,13 +505,13 @@ export class World {
       roof.add(gab);
     }
     const chimney = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.2, 1.1), lambert('#b4553f', { transparent: true }));
-    chimney.position.set(4.5, WH + rise, cz - 2.5);
+    chimney.position.set(7, WH + rise * 0.75, cz - 3.5);
     chimney.castShadow = true;
     base.chimneyMat = chimney.material;
     roof.add(chimney);
     // Little dormer window on the front slope
     const dormer = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.4), base.gableMat);
-    dormer.position.set(-3.5, WH + rise * 0.55, cz + run * 0.42);
+    dormer.position.set(-6, WH + rise * 0.55, cz + run * 0.42);
     roof.add(dormer);
     g.add(roof);
     base.roof = roof;
@@ -613,8 +626,8 @@ export class World {
         ? textTexture('Closed', { bg: '#cfd3d8', color: '#666' })
         : textTexture(`${info.ownerName}'s Base · ${cat.icon} ${cat.name}`, { bg: '#ffffff', color: shade(col, -0.25), size: 54, w: 768 });
       base.signMat.needsUpdate = true;
-      for (let n = 0; n < R.SLOTS_PER_LAYER; n++) {
-        this.pedestals.setColorAt(info.index * R.SLOTS_PER_LAYER + n, new THREE.Color(info.closed ? '#c8c8c8' : shade(cat.color, 0.28)));
+      for (let n = 0; n < R.MAIN_SLOTS; n++) {
+        this.pedestals.setColorAt(info.index * R.MAIN_SLOTS + n, new THREE.Color(info.closed ? '#c8c8c8' : shade(cat.color, 0.28)));
       }
     }
     this.pedestals.instanceColor.needsUpdate = true;
@@ -632,7 +645,7 @@ export class World {
       const cat = CATEGORIES[k * 2];
       base.signMat.map = textTexture(`${cat.icon} ${cat.name}`, { bg: '#ffffff', color: shade(col, -0.25) });
       base.signMat.needsUpdate = true;
-      for (let n = 0; n < R.SLOTS_PER_LAYER; n++) this.pedestals.setColorAt(k * R.SLOTS_PER_LAYER + n, new THREE.Color(shade(cat.color, 0.28)));
+      for (let n = 0; n < R.MAIN_SLOTS; n++) this.pedestals.setColorAt(k * R.MAIN_SLOTS + n, new THREE.Color(shade(cat.color, 0.28)));
     });
     this.pedestals.instanceColor.needsUpdate = true;
     this.bases.forEach((b, k) => this.setPedestals(k, new Set([...Array(8).keys()])));
@@ -644,11 +657,11 @@ export class World {
   setPedestals(k, slots) {
     const m = new THREE.Matrix4();
     const B = this.bases[k].group.matrixWorld;
-    for (let n = 0; n < R.SLOTS_PER_LAYER; n++) {
+    for (let n = 0; n < R.MAIN_SLOTS; n++) {
       const [x, , z] = R.slotLocal(n);
       const s = slots.has(n) ? 1 : 0.0001;
       m.copy(B).multiply(mat(x, 0.13, z, 0, s, s, s));
-      this.pedestals.setMatrixAt(k * R.SLOTS_PER_LAYER + n, m);
+      this.pedestals.setMatrixAt(k * R.MAIN_SLOTS + n, m);
     }
     this.pedestals.instanceMatrix.needsUpdate = true;
   }

@@ -12,12 +12,12 @@ export const POND_RADIUS = 13;      // the lake in the middle of the map
 export const HALF = 20;             // compound is 40 x 40
 export const CELL = 2;              // build grid cell size
 export const GRID = 20;             // 20 x 20 cells
-export const HOUSE = { x0: -8, x1: 8, z0: -10, z1: 2 };
+export const HOUSE = { x0: -12, x1: 12, z0: -14, z1: 4 };
 export const WALL_H = 3.2;
 export const DOOR_HALF = 2;         // doors are 4 wide (front and back)
 export const FRONT_GATE_HALF = 4;   // front gate is 8 wide
 export const BACK_GATE_HALF = 2;    // back gate is 4 wide
-export const SPAWN_LOCAL = [0, -4.5];
+export const SPAWN_LOCAL = [2.4, -4.4]; // between the word rows, so you never spawn on a card
 
 // ---------- Player ----------
 export const MAX_HP = 100;
@@ -27,7 +27,9 @@ export const SPEED_RAID = 9.8;       // raiders have no weapon but are faster
 export const CARRY_SLOWDOWN = 0.07;  // speed lost per carried word
 export const STICK = { range: 2.9, dmg: 20, cooldown: 450, kb: 9, kbUp: 5 };
 export const RESPAWN_MS = 3000;
-export const PICKUP_RANGE = 1.5;
+export const PICKUP_RANGE = 1.25;
+export const STUN_MS = 1000;         // touching a trick word
+export const STUN_IMMUNE_MS = 1200;  // grace period after a stun so you can walk away
 export const START_BLOCKS = 20;
 export const MAX_TURRETS = 4;
 export const POINTS_PER_WORD = 10;
@@ -87,6 +89,7 @@ export const SETTINGS = {
   raidTime: { label: 'Raid time (seconds)', min: 30, max: 900, step: 30, def: 180 },
   rounds: { label: 'Raid rounds', min: 1, max: 5, step: 1, def: 2 },
   wordsPerBase: { label: 'Words per house', min: 4, max: 12, step: 1, def: 8 },
+  decoysPerBase: { label: 'Trick words per house', min: 0, max: 8, step: 1, def: 4 },
   carryLimit: { label: 'Words a raider can carry', min: 1, max: 5, step: 1, def: 3 },
   startCoins: { label: 'Starting coins', min: 0, max: 1000, step: 50, def: 150 },
 };
@@ -212,17 +215,26 @@ export function placementError(grid, i, j, type) {
 }
 
 // ---------- Word display slots inside a house ----------
-export const SLOT_COLS = 6, SLOT_ROWS = 5, SLOTS_PER_LAYER = SLOT_COLS * SLOT_ROWS;
-const slotGrid = (k) => [-6.25 + (k % SLOT_COLS) * 2.5, -8.6 + Math.floor(k / SLOT_COLS) * 2.05];
+// Slots 0..MAIN_SLOTS-1: the house's own words mixed with trick words, spread
+// out on pedestals so raiders can weave between them.
+// Slots MAIN_SLOTS+: the gold "loot shelf" by the front door for stolen words.
+export const MAIN_COLS = 5, MAIN_ROWS = 4, MAIN_SLOTS = MAIN_COLS * MAIN_ROWS;
+export const MAIN_DX = 4.8, MAIN_DZ = 3.2;
+export const LOOT_COLS = 11, LOOT_Z = 1.4;
+const mainGrid = (k) => [(k % MAIN_COLS - (MAIN_COLS - 1) / 2) * MAIN_DX, -12.4 + Math.floor(k / MAIN_COLS) * MAIN_DZ];
 // Fill from the middle of the room outwards so a few words still look like a display.
-const SLOT_ORDER = [...Array(SLOTS_PER_LAYER).keys()].sort((a, b) => {
-  const [ax, az] = slotGrid(a), [bx, bz] = slotGrid(b);
-  return Math.hypot(ax, (az + 4.5) * 1.2) - Math.hypot(bx, (bz + 4.5) * 1.2) || a - b;
+const MAIN_ORDER = [...Array(MAIN_SLOTS).keys()].sort((a, b) => {
+  const [ax, az] = mainGrid(a), [bx, bz] = mainGrid(b);
+  return Math.hypot(ax, (az + 7.6) * 1.4) - Math.hypot(bx, (bz + 7.6) * 1.4) || a - b;
 });
+export const isLootSlot = (n) => n >= MAIN_SLOTS;
 export function slotLocal(n) {
-  const k = SLOT_ORDER[n % SLOTS_PER_LAYER], layer = Math.floor(n / SLOTS_PER_LAYER);
-  const [x, z] = slotGrid(k);
-  return [x, 1.35 + layer * 1.0, z];
+  if (n < MAIN_SLOTS) {
+    const [x, z] = mainGrid(MAIN_ORDER[n]);
+    return [x, 1.35, z];
+  }
+  const m = n - MAIN_SLOTS;
+  return [-10 + (m % LOOT_COLS) * 2, 1.2 + Math.floor(m / LOOT_COLS) * 0.8, LOOT_Z];
 }
 
 export function points(words, kos) {

@@ -28,48 +28,58 @@ function canvasTexture(canvas) {
 
 const FONT = '"Lilita One", "Nunito", "Arial Rounded MT Bold", sans-serif';
 
-// A word card: rounded card in the category colour with the word on it.
+// Word cards.
+//  'plain' - cards on a house's pedestals. Real words and trick words look
+//            identical (no colour or label hints): kids must decide whether the
+//            word fits the house's category.
+//  'loot'  - gold trophy cards for stolen words (shelf by the door / carried).
 const cardCache = new Map();
-export function wordCardTexture(text, cat) {
-  const key = text + '|' + cat;
+export function wordCardTexture(text, cat, style = 'plain') {
+  const key = text + '|' + cat + '|' + style;
   if (cardCache.has(key)) return cardCache.get(key);
   const c = CATEGORIES[cat];
   const W = 512, H = 200;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const g = cv.getContext('2d');
+  const loot = style === 'loot';
   roundRect(g, 8, 14, W - 16, H - 22, 34);
   g.fillStyle = 'rgba(0,0,0,0.25)';
   g.fill();
   roundRect(g, 8, 6, W - 16, H - 22, 34);
-  g.fillStyle = '#ffffff';
+  g.fillStyle = loot ? '#b8860b' : '#4aa8ff';
   g.fill();
-  roundRect(g, 18, 16, W - 36, H - 42, 26);
-  g.fillStyle = c.color;
+  roundRect(g, 20, 18, W - 40, H - 46, 24);
+  if (loot) {
+    const grad = g.createLinearGradient(0, 18, 0, H - 28);
+    grad.addColorStop(0, '#fff3a6');
+    grad.addColorStop(1, '#ffc93c');
+    g.fillStyle = grad;
+  } else g.fillStyle = '#ffffff';
   g.fill();
-  g.fillStyle = '#fff';
+  const label = loot ? `🏆 ${text}` : text;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  let size = 84;
+  let size = 86;
   g.font = `${size}px ${FONT}`;
-  while (g.measureText(text).width > W - 70 && size > 30) {
+  while (g.measureText(label).width > W - 70 && size > 30) {
     size -= 4;
     g.font = `${size}px ${FONT}`;
   }
-  g.lineWidth = 10;
-  g.strokeStyle = 'rgba(0,0,0,0.28)';
-  g.strokeText(text, W / 2, 86);
-  g.fillText(text, W / 2, 86);
-  g.font = `30px ${FONT}`;
-  g.fillStyle = 'rgba(255,255,255,0.92)';
-  g.fillText(`${c.icon} ${c.name}`, W / 2, 148);
+  g.fillStyle = loot ? '#6b4a00' : '#1d2a44';
+  g.fillText(label, W / 2, loot ? 80 : 94);
+  if (loot && c) {
+    g.font = `30px ${FONT}`;
+    g.fillStyle = '#7a5600';
+    g.fillText(`${c.icon} ${c.name}`, W / 2, 144);
+  }
   const tex = canvasTexture(cv);
   cardCache.set(key, tex);
   return tex;
 }
 
-export function makeWordSprite(text, cat, scale = 1) {
-  const mat = new THREE.SpriteMaterial({ map: wordCardTexture(text, cat), depthWrite: false });
+export function makeWordSprite(text, cat, scale = 1, style = 'plain') {
+  const mat = new THREE.SpriteMaterial({ map: wordCardTexture(text, cat, style), depthWrite: false });
   const s = new THREE.Sprite(mat);
   s.scale.set(2.2 * scale, 0.86 * scale, 1);
   return s;
