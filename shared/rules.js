@@ -34,9 +34,10 @@ export const START_BLOCKS = 20;
 export const MAX_TURRETS = 4;
 export const POINTS_PER_WORD = 10;
 export const POINTS_PER_KO = 2;
-export const COINS_PER_WORD = 10;
+export const COINS_PER_WORD = 30;       // bonus for each stolen word brought home
 export const COINS_PER_KO = 5;
-export const COINS_PER_ROUND = 50;
+export const COINS_PER_ROUND = 50;      // round bonus for everyone else
+export const COINS_ROUND_WIN = 100;     // round bonus for the round's top scorer(s)
 
 // Which of the six bases are used for a given player count (spread out evenly).
 export const BASE_LAYOUT = {
@@ -77,7 +78,7 @@ export const ITEMS = {
   },
   boing: {
     name: 'Boing Mushroom', icon: '🍄', floor: true, cost: 35,
-    desc: 'Floor trap. Bounces raiders high in the air and away!', rearm: 1500, power: 15,
+    desc: 'Floor trap. Bounces raiders away — and knocks a stolen word out of their bag!', rearm: 1500, power: 15,
   },
 };
 export const ITEM_ORDER = ['block', 'snow', 'frost', 'cactus', 'freeze', 'slime', 'boing'];

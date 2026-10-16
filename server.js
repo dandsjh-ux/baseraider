@@ -271,7 +271,7 @@ function tickRoom(r, now) {
       id: p.id, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), r: +p.ry.toFixed(2), a: p.anim,
       hp: Math.round(p.hp), d: p.dead ? 1 : 0,
       fz: Math.max(0, p.frozenUntil - now), sl: p.slowUntil > now ? 1 : 0,
-      sn: Math.max(0, p.stunUntil - now), off: p.online ? 0 : 1,
+      sn: Math.max(0, p.stunUntil - now), off: p.online ? 0 : 1, ar: p.armed ? 1 : 0,
       c: p.coins, k: p.kos, st: p.stolen, w: wordCount(g, p.base),
     })),
   });
@@ -293,8 +293,13 @@ function advancePhase(r, now) {
     g.round++;
     g.phase = 'prep';
     g.phaseEnd = now + s.prepTime * 1000;
+    const score = (p) => R.points(wordCount(g, p.base), p.kos);
+    const best = Math.max(...[...r.players.values()].map(score));
+    const winners = [...r.players.values()].filter((p) => score(p) === best);
     for (const p of r.players.values()) {
-      p.coins += R.COINS_PER_ROUND;
+      const win = winners.includes(p);
+      p.coins += win ? R.COINS_ROUND_WIN : R.COINS_PER_ROUND;
+      toast(p.id, win ? `🏆 You won round ${g.round - 1}! +${R.COINS_ROUND_WIN} coins` : `+${R.COINS_PER_ROUND} round coins`, 'good');
       p.dead = false;
       p.hp = R.MAX_HP;
       p.frozenUntil = p.slowUntil = p.stunUntil = 0;
@@ -302,7 +307,8 @@ function advancePhase(r, now) {
       sendInv(p);
     }
     io.to(r.id).emit('phase', { phase: 'prep', round: g.round, timeLeft: s.prepTime * 1000 });
-    feed(r, `🛠️ Round ${g.round} prep! Everyone gets +${R.COINS_PER_ROUND} coins.`);
+    feed(r, `🏆 Round ${g.round - 1} winner${winners.length > 1 ? 's' : ''}: ${winners.map((p) => p.name).join(', ')} (+${R.COINS_ROUND_WIN} coins). Everyone else +${R.COINS_PER_ROUND}.`);
+    feed(r, `🛠️ Round ${g.round} prep!`);
     return;
   }
   endGame(r);
@@ -352,6 +358,18 @@ function checkTraps(r, p, now) {
       const B = R.BASES[b.index];
       const ux = wx - B.cx, uz = wz - B.cz;
       damage(r, p, 0, b.owner, 'boing', [ux * def.power, 16, uz * def.power]);
+      if (p.carry.length) {
+        const w = g.words.find((x) => x.id === p.carry.at(-1));
+        p.carry.pop();
+        if (w) {
+          w.carrier = null;
+          w.base = w.from;
+          w.slot = freeSlot(g, w.from, w.cat);
+          toast(p.id, `🍄 Boing! "${w.text}" fell out of your bag and went back home.`, 'bad');
+          if (b.owner) toast(b.owner, `🍄 Your mushroom bounced "${w.text}" out of ${p.name}'s bag!`, 'good');
+        }
+        sendWords(r);
+      }
     }
   }
 }
@@ -661,6 +679,7 @@ io.on('connection', (socket) => {
     p.x = nx; p.y = Math.max(0, Math.min(30, y)); p.z = nz;
     if (Number.isFinite(+d.r)) p.ry = +d.r;
     p.anim = clampInt(d.a, 0, 3, 0);
+    p.armed = d.w ? 1 : 0;
     if (p.carry.length) {
       const [lx, lz] = R.toLocal(R.BASES[p.base], p.x, p.z);
       if (R.inHouse(lx, lz)) bankWords(c.r, p);
@@ -707,9 +726,10 @@ io.on('connection', (socket) => {
     if (!c?.g || c.p.dead) return;
     const p = c.p, now = Date.now();
     if (now - p.lastSwing < R.STICK.cooldown || p.frozenUntil > now || p.stunUntil > now) return;
-    const B = R.BASES[p.base];
-    const [lx, lz] = R.toLocal(B, p.x, p.z);
-    if (!R.inCompound(lx, lz, 1)) return; // the stick only comes out at home
+    // The stick works in your own compound or in any open enemy compound.
+    const here = c.g.bases.find((b) => !b.closed && R.inCompound(...R.toLocal(R.BASES[b.index], p.x, p.z), 1));
+    if (!here) return;
+    const B = R.BASES[here.index];
     p.lastSwing = now;
     if (Number.isFinite(+d?.r)) p.ry = +d.r;
     const fx = Math.sin(p.ry), fz = Math.cos(p.ry);

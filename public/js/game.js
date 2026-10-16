@@ -68,6 +68,7 @@ export class Game {
     this.raiderAlert = false;
     this.lastTickSec = -1;
     this.lastRaiderToast = 0;
+    this.armed = false; // stick drawn while away from home (costs the raider speed bonus)
     this.locked = false;
 
     this.bindSocket();
@@ -298,6 +299,7 @@ export class Game {
       p.hp = s.hp;
       p.frozenUntil = now + s.fz;
       p.stunUntil = now + (s.sn || 0);
+      p.armed = !!s.ar;
       p.slowed = !!s.sl;
       p.words = s.w ?? p.words;
       const present = !s.off;
@@ -445,7 +447,7 @@ export class Game {
         case 'KeyM': this.toggleMute(); break;
         case 'Tab': e.preventDefault(); $('scoreboard').classList.add('big'); break;
         case 'Escape': this.closePanels(); this.attackMode(); break;
-        case 'Digit1': case 'KeyF': this.attackMode(); break;
+        case 'Digit1': case 'KeyF': this.stickKey(); break;
         default:
           if (/^Digit[2-8]$/.test(e.code)) this.selectItem(R.ITEM_ORDER[+e.code.slice(5) - 2]);
       }
@@ -590,6 +592,18 @@ export class Game {
     sfx.click();
     this.renderHotbar();
   }
+  // 1 / F: leave build mode; away from home it draws or puts away the stick.
+  stickKey() {
+    if (this.buildMode) return this.attackMode();
+    if (!this.atHome()) this.setArmed(!this.armed);
+  }
+  setArmed(v) {
+    if (v === this.armed) return;
+    this.armed = v;
+    sfx.click();
+    this.toast(v ? '🏏 Stick out! You can whack in enemy bases, but you lose your raider speed. (1 / F to put it away)' : '🏃 Stick away — raider speed is back!');
+    this.renderHotbar();
+  }
   attackMode() {
     if (!this.buildMode) return;
     this.buildMode = false;
@@ -598,7 +612,7 @@ export class Game {
   }
   selectItem(type) {
     if (!type) return;
-    if (type === 'whack') return this.attackMode();
+    if (type === 'whack') return this.stickKey();
     this.selected = type;
     if (!this.buildMode) this.toggleBuild(true);
     this.renderHotbar();
@@ -636,13 +650,7 @@ export class Game {
       sfx.place();
       return;
     }
-    if (!this.atHome()) {
-      if (now - this.lastRaiderToast > 3000) {
-        this.lastRaiderToast = now;
-        this.toast("🏃 Raiders can't fight — grab words and run! (Your stick works at home.)");
-      }
-      return;
-    }
+    if (!this.atHome() && !this.armed) this.setArmed(true);
     const L = this.local;
     if (now - L.lastSwing < R.STICK.cooldown) return;
     L.lastSwing = now;
@@ -679,7 +687,7 @@ export class Game {
 
   renderHotbar() {
     const el = $('hotbar');
-    el.innerHTML = `<div class="slot whack ${this.buildMode ? '' : 'sel'}" data-t="whack" title="Whack mode (1 / F / Esc)">
+    el.innerHTML = `<div class="slot whack ${this.buildMode || (!this.atHome() && !this.armed) ? '' : 'sel'}" data-t="whack" title="Whack mode / draw stick (1 / F)">
         <span class="key">1</span><span class="ic">🏏</span><span class="ct">Whack</span></div><div class="sep"></div>` +
       R.ITEM_ORDER.map((t, n) => {
         const d = R.ITEMS[t];
@@ -777,13 +785,13 @@ export class Game {
     $('coins').textContent = this.coins;
     const home = this.atHome();
     if (!this.buildMode) {
-      $('modePill').className = home ? 'whack' : 'raiding';
-      $('modePill').textContent = home ? '🏏 WHACK MODE' : '🏃 RAIDING — no stick away from home';
+      $('modePill').className = home || this.armed ? 'whack' : 'raiding';
+      $('modePill').textContent = home ? '🏏 WHACK MODE' : this.armed ? '🏏 STICK OUT — normal speed (1/F to put away)' : '🏃 RAIDING — fast! (1/F or click to draw stick)';
     }
     $('role').className = home ? 'defend' : 'raid';
     $('role').innerHTML = home
       ? '🛡️ <b>DEFENDING</b> — whack raiders with your stick!'
-      : '🏃 <b>RAIDING</b> — super speed! No weapon.';
+      : this.armed ? '🏏 <b>RAIDING (stick out)</b> — normal speed, can whack!' : '🏃 <b>RAIDING</b> — super speed! Stick put away.';
     const carry = this.words.filter((w) => w.k === this.me);
     $('carry').innerHTML = carry.length
       ? `🎒 Carrying (${carry.length}/${this.settings.carryLimit}): ${carry.map((w) => `<span class="chip" style="background:${CATEGORIES[w.c].color}">${escapeHtml(w.t)}</span>`).join(' ')}`
@@ -898,7 +906,8 @@ export class Game {
     const stunned = me.stunUntil > now;
     const dead = me.dead;
     const home = this.atHome();
-    me.model.setMode(home ? 'defend' : 'raid');
+    if (home) this.armed = false; // leaving home always starts at raider speed
+    me.model.setMode(home || this.armed ? 'defend' : 'raid');
     if (this.buildMode && !home) this.toggleBuild(false);
     if (!home && !$('shopPanel').classList.contains('hidden')) this.toggleShop(false);
 
@@ -912,7 +921,7 @@ export class Game {
     const ml = Math.hypot(mx, mz);
     if (ml > 1) { mx /= ml; mz /= ml; }
     const carrying = this.words.filter((w) => w.k === this.me).length;
-    let speed = home ? R.SPEED_DEFEND : R.SPEED_RAID;
+    let speed = home || this.armed ? R.SPEED_DEFEND : R.SPEED_RAID;
     speed *= 1 - R.CARRY_SLOWDOWN * carrying;
     if (me.slowed) speed *= R.ITEMS.slime.slow;
     if (frozen || stunned || dead) speed = 0;
@@ -948,7 +957,7 @@ export class Game {
       L.lastSend = now;
       this.socket.emit('st', {
         p: [+L.pos.x.toFixed(2), +L.pos.y.toFixed(2), +L.pos.z.toFixed(2)],
-        r: +L.ry.toFixed(2), a: hspeed > 0.5 ? 1 : 0, s: L.seq,
+        r: +L.ry.toFixed(2), a: hspeed > 0.5 ? 1 : 0, s: L.seq, w: this.armed ? 1 : 0,
       });
     }
 
@@ -985,7 +994,7 @@ export class Game {
       p.model.group.position.copy(p.pos);
       p.model.group.rotation.y = p.ry;
       const [lx, lz] = R.toLocal(R.BASES[p.base], p.pos.x, p.pos.z);
-      p.model.setMode(R.inCompound(lx, lz) ? 'defend' : 'raid');
+      p.model.setMode(R.inCompound(lx, lz) || p.armed ? 'defend' : 'raid');
       p.model.update(dt, { speed: p.speed, air: p.pos.y > 0.15, frozen: p.frozenUntil > now, stunned: p.stunUntil > now, time: this.time });
       p.model.tag?.set(p.hp);
     }

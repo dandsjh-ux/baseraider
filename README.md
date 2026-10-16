@@ -11,12 +11,12 @@ Built with **three.js** in the browser and **Node.js + socket.io** on the server
 3. **🛠️ Prep phase:** every other base is locked behind a force field. Place your **20 blocks** (crates) in your compound and buy defences in the shop.
 4. **⚔️ Raid phase:**
    - Inside your own compound you are **defending**. You hold a stick that does damage with a small knockback.
-   - Anywhere else you are **raiding**. You have no weapon but you run about 40% faster. Each word you carry slows you down a little.
+   - Anywhere else you are **raiding** and run about 40% faster. Press **1 / F** (or click) to draw your stick and fight inside enemy bases, but you drop to normal speed until you put it away. Each word you carry slows you down a little.
    - Each house's sign shows its **category** (for example 🐾 Animals). Touch word cards that **fit that category** to pick them up (3 at a time by default), then run back into your own house to bank them.
    - **Trick words:** every house also has a few words from *other* categories. They look exactly the same as the real ones. Touch one and you're **stunned for 1 second** and bounced back. The cards are spread out so careful readers can weave between them.
    - Stolen words go on your gold **🏆 LOOT shelf** by the front door. Other raiders can steal them from there, and stealing from the loot shelf is always safe.
    - At 0 HP you're knocked out. Any words you were carrying go back to the house they came from, and you respawn at your own house after 3 seconds.
-5. More rounds can follow, each with a prep phase. Everyone gets +50 coins at the start of each new round.
+5. More rounds can follow, each with a prep phase. At the end of each round the top scorer(s) get **+100 coins** and everyone else gets **+50**. Every stolen word you bring home is worth **+30 coins**, and every knock-out +5.
 6. **Scoring:** 10 points per word in your house plus 2 points per knock-out. The highest score at the end wins, and there's a podium screen.
 
 ### Defences (shop)
@@ -29,7 +29,7 @@ Built with **three.js** in the browser and **Node.js + socket.io** on the server
 | 🌵 Cactus Spikes | 30 | Floor trap, 25 damage |
 | ❄️ Freeze Trap | 40 | Floor trap, freezes for 2.5 s |
 | 🟢 Sticky Slime | 20 | Floor trap, slows raiders right down |
-| 🍄 Boing Mushroom | 35 | Floor trap, launches raiders up and out of your base |
+| 🍄 Boing Mushroom | 35 | Floor trap, launches raiders up and out of your base, and knocks one carried word back to where it came from |
 
 You can place up to 4 towers per base. Raiders can **jump over** floor traps.
 
