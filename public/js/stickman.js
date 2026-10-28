@@ -18,8 +18,6 @@ const M = {
   black: new THREE.MeshBasicMaterial({ color: 0x1b1b2a }),
   white: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   blush: new THREE.MeshBasicMaterial({ color: 0xff8fa8, transparent: true, opacity: 0.75 }),
-  wood: new THREE.MeshLambertMaterial({ color: 0xb87333 }),
-  tape: new THREE.MeshLambertMaterial({ color: 0xfff1c9 }),
   pack: new THREE.MeshLambertMaterial({ color: 0x7a5230 }),
   packDark: new THREE.MeshLambertMaterial({ color: 0x5a3a1e }),
   gold: new THREE.MeshLambertMaterial({ color: 0xffcf33, emissive: 0x332200 }),
@@ -124,8 +122,99 @@ function hatMesh(kind, color) {
   return g;
 }
 
+const lam = {};
+const L = (c) => (lam[c] ||= new THREE.MeshLambertMaterial({ color: c }));
+const LG = (c) => (lam['g' + c] ||= new THREE.MeshLambertMaterial({ color: c, emissive: 0x221a00 }));
+
+// Weapons are built with the grip at the origin, reaching down the -y axis; the flat side faces +z (the swing direction).
+function weaponMesh(kind) {
+  const g = new THREE.Group();
+  const add = (geom, mat, x = 0, y = 0, z = 0, rx = 0, rz = 0) => {
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(x, y, z);
+    mesh.rotation.set(rx, 0, rz);
+    mesh.castShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  const shaft = (len, r, mat) => add(new THREE.CylinderGeometry(r, r, len, 8), mat, 0, -len / 2);
+  switch (kind) {
+    case 'cap': { // tennis racket
+      shaft(0.6, 0.05, L(0xe8e8f0));
+      add(new THREE.CylinderGeometry(0.058, 0.058, 0.22, 8), L(0x2d6cdf), 0, -0.1);
+      const frame = add(new THREE.TorusGeometry(0.3, 0.035, 6, 24), L(0xff4d4d), 0, -0.9);
+      frame.scale.set(0.82, 1, 1);
+      add(new THREE.CircleGeometry(0.28, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide }), 0, -0.9, 0).scale.set(0.82, 1, 1);
+      break;
+    }
+    case 'crown': { // golden sword
+      add(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 8), L(0x7a2a2a), 0, -0.05);
+      add(new THREE.BoxGeometry(0.5, 0.08, 0.1), LG(0xffcf33), 0, -0.2);
+      add(new THREE.BoxGeometry(0.15, 0.85, 0.035), L(0xdfe6f0), 0, -0.66);
+      add(new THREE.ConeGeometry(0.075, 0.2, 4), L(0xdfe6f0), 0, -1.18, 0, Math.PI);
+      add(new THREE.SphereGeometry(0.06, 8, 6), L(0xff3d6e), 0, -0.2, 0.06);
+      break;
+    }
+    case 'party': { // squeaky toy hammer
+      shaft(0.85, 0.05, L(0xffe14d));
+      add(new THREE.CylinderGeometry(0.2, 0.2, 0.55, 14), L(0xff5fa8), 0, -0.9, 0, 0, Math.PI / 2);
+      for (const x of [-0.29, 0.29]) add(new THREE.CylinderGeometry(0.21, 0.21, 0.06, 14), L(0x5bd9ff), x, -0.9, 0, 0, Math.PI / 2);
+      break;
+    }
+    case 'beanie': { // candy cane
+      const red = L(0xff3b4f), white = L(0xffffff);
+      for (let i = 0; i < 6; i++) add(new THREE.CylinderGeometry(0.055, 0.055, 0.17, 8), i % 2 ? white : red, 0, -0.085 - i * 0.17);
+      const hook = add(new THREE.TorusGeometry(0.22, 0.055, 8, 16, Math.PI * 1.1), red, 0.22, -1.02, 0);
+      hook.rotation.z = Math.PI * 0.95;
+      add(new THREE.SphereGeometry(0.055, 8, 6), red, 0, -1.02);
+      break;
+    }
+    case 'tophat': { // magic wand
+      shaft(0.95, 0.04, L(0x222233));
+      add(new THREE.CylinderGeometry(0.042, 0.042, 0.14, 8), L(0xffffff), 0, -0.07);
+      add(new THREE.CylinderGeometry(0.042, 0.042, 0.14, 8), L(0xffffff), 0, -0.95);
+      const star = add(new THREE.OctahedronGeometry(0.16, 0), LG(0xffe14d), 0, -1.12);
+      star.scale.set(1, 1, 0.45);
+      break;
+    }
+    case 'bow': { // heart wand
+      shaft(0.75, 0.04, L(0xffe0ef));
+      const h = new THREE.Shape();
+      h.moveTo(0, 0);
+      h.bezierCurveTo(-0.1, 0.12, -0.28, 0.2, -0.28, 0.34);
+      h.bezierCurveTo(-0.28, 0.46, -0.12, 0.5, 0, 0.38);
+      h.bezierCurveTo(0.12, 0.5, 0.28, 0.46, 0.28, 0.34);
+      h.bezierCurveTo(0.28, 0.2, 0.1, 0.12, 0, 0);
+      const heart = add(new THREE.ExtrudeGeometry(h, { depth: 0.08, bevelEnabled: false }), L(0xff4d8d), 0, -0.72, 0);
+      heart.rotation.z = Math.PI;
+      heart.position.set(0, -0.72, 0.04);
+      break;
+    }
+    case 'viking': { // battle axe
+      shaft(1.15, 0.055, L(0x8a5a2b));
+      add(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 8), L(0xa7adb8), 0, -0.9);
+      const blade = new THREE.Shape();
+      blade.moveTo(0, 0.2);
+      blade.lineTo(0.42, 0.34);
+      blade.quadraticCurveTo(0.3, 0, 0.42, -0.34);
+      blade.lineTo(0, -0.2);
+      blade.closePath();
+      add(new THREE.ExtrudeGeometry(blade, { depth: 0.07, bevelEnabled: false }), L(0xc4cad6), 0.03, -1.0, -0.035);
+      break;
+    }
+    default: { // frying pan
+      shaft(0.6, 0.05, L(0x4a4a58));
+      add(new THREE.CylinderGeometry(0.058, 0.058, 0.25, 8), L(0xb87333), 0, -0.12);
+      add(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 20), L(0x30303c), 0, -0.93, 0, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.27, 0.27, 0.02, 20), L(0x55556a), 0, -0.93, 0.04, Math.PI / 2);
+    }
+  }
+  return g;
+}
+
 export class Stickman {
   constructor(look = { color: 0, hat: 0 }, { name = null, shadows = true } = {}) {
+    this.shadows = shadows;
     this.group = new THREE.Group();
     this.root = new THREE.Group(); // bobs / squashes
     this.group.add(this.root);
@@ -192,19 +281,12 @@ export class Stickman {
     this.root.add(this.head);
     this.setHat(look.hat);
 
-    // Stick (club), held in the right hand
+    // Weapon (matches the hat), held in the right hand
     this.stick = new THREE.Group();
-    const club = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.055, 1.05, 10), M.wood);
-    club.position.y = -0.48;
-    club.castShadow = shadows;
-    const tape = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.062, 0.18, 10), M.tape);
-    tape.position.y = -0.08;
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), M.wood);
-    knob.position.y = -1.0;
-    this.stick.add(club, tape, knob);
     this.stick.position.y = -0.55;
     this.stick.rotation.x = -1.2;
     this.arms[1].add(this.stick);
+    this.setWeapon(look.hat);
 
     // Raider backpack
     this.pack = new THREE.Group();
@@ -267,11 +349,19 @@ export class Stickman {
     }
   }
 
+  setWeapon(h) {
+    if (this.weapon) this.stick.remove(this.weapon);
+    this.weapon = weaponMesh(HATS[h]);
+    this.weapon.traverse((o) => { if (o.isMesh) o.castShadow = this.shadows; });
+    this.stick.add(this.weapon);
+  }
+
   setLook(look) {
     this.look = { ...look };
     this.color = COLORS[look.color] || COLORS[0];
     this.mat.color.set(this.color);
     this.setHat(look.hat);
+    this.setWeapon(look.hat);
   }
 
   setMode(mode) {

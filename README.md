@@ -10,7 +10,7 @@ Built with **three.js** in the browser and **Node.js + socket.io** on the server
 2. **Room lobby:** the host can change the settings and press **Start**. Bases are spread evenly around the map. Houses without a player get boarded up with a *CLOSED* sign. With 2 players, the 4 other houses are closed.
 3. **🛠️ Prep phase:** every other base is locked behind a force field. Place your **20 blocks** (crates) in your compound and buy defences in the shop.
 4. **⚔️ Raid phase:**
-   - Inside your own compound you are **defending**. You hold a stick that does damage with a small knockback.
+   - Inside your own compound you are **defending**. You hold a weapon that does damage with a small knockback (each hat comes with its own: frying pan, racket, golden sword, squeaky hammer, candy cane, magic wand, heart wand, battle axe).
    - Anywhere else you are **raiding** and run about 40% faster. Press **1 / F** (or click) to draw your stick and fight inside enemy bases, but you drop to normal speed until you put it away. Each word you carry slows you down a little.
    - Each house's sign shows its **category** (for example 🐾 Animals). Touch word cards that **fit that category** to pick them up (3 at a time by default), then run back into your own house to bank them.
    - **Trick words:** every house also has a few words from *other* categories. They look exactly the same as the real ones. Touch one and you're **stunned for 1 second** and bounced back. The cards are spread out so careful readers can weave between them.
@@ -93,7 +93,7 @@ public/js/main.js    Menu / lobby / end-screen logic and networking glue
 public/js/engine.js  Renderer, lights, render loop, menu fly-over
 public/js/world.js   Terrain, lake, forest, mountains, the 6 bases (houses, fences, gates) and collision
 public/js/game.js    In-game client: movement, camera, building, words, effects, HUD, touch controls
-public/js/stickman.js Cute stickman character (colours, hats, stick, backpack, animations)
+public/js/stickman.js Cute stickman character (colours, hats, hat-matched weapons, backpack, animations)
 public/js/items.js   Block / tower / trap models
 public/js/audio.js   Synthesised sound effects
 ```
